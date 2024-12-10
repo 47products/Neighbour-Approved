@@ -9,4 +9,6 @@ repos:
     rev: v3.3.2
     hooks:
       - id: pylint
-        additional_dependencies: []
+        additional_dependencies: 
+          - fastapi
+          - pydantic

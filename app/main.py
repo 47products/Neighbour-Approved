@@ -17,7 +17,7 @@ from fastapi import FastAPI
 app = FastAPI(
     title="Neighbour Approved",
     description="A platform for community-driven endorsements of contractors.",
-    version="0.1.0"
+    version="0.1.0",
 )
 
 
@@ -28,7 +28,7 @@ def health_check() -> Dict[str, str]:
 
     Returns:
         Dict[str, str]: A JSON object containing a simple status message.
-        
+
     Example:
         GET /health
         Response: {"status": "ok"}
