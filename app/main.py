@@ -13,12 +13,15 @@ evolves.
 
 from typing import Dict
 from fastapi import FastAPI
+from app.api.v1.routers import api_router
 
 app = FastAPI(
     title="Neighbour Approved",
     description="A platform for community-driven endorsements of contractors.",
     version="0.1.0",
 )
+
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/health", response_model=Dict[str, str])
