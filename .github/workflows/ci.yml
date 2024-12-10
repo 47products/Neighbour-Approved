@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Black (check mode)
+        run: black --check .
+
+      - name: Run Pylint
+        run: pylint app tests
+
+      - name: Run Tests with Coverage
+        run: |
+          coverage run -m pytest
+          coverage report --fail-under=80
+          coverage html
+
+      - name: Upload Coverage Artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: htmlcov/
+
+# Status Badge Instructions:
+# After merging this workflow into your repository, you can add a status badge to your README.
+# For example, in your README.md:
+#
+# ![CI](https://github.com/<your-org>/<your-repo>/actions/workflows/ci.yml/badge.svg)
+#
+# Replace <your-org> and <your-repo> with your GitHub organisation and repository names.
+#
+# This badge will display the current build status of your CI pipeline.
