@@ -47,17 +47,9 @@ jobs:
 
       - name: Upload Coverage Artifact
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: htmlcov/
 
-# Status Badge Instructions:
-# After merging this workflow into your repository, you can add a status badge to your README.
-# For example, in your README.md:
-#
-# ![CI](https://github.com/<your-org>/<your-repo>/actions/workflows/ci.yml/badge.svg)
-#
-# Replace <your-org> and <your-repo> with your GitHub organisation and repository names.
-#
-# This badge will display the current build status of your CI pipeline.
+# ![CI](https://github.com/47products/neighbour-approved/actions/workflows/ci.yml/badge.svg)
