@@ -28,19 +28,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      - name: Create virtual environment
+        run: python -m venv .venv
+
       - name: Install dependencies
         run: |
+          . .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run Black (check mode)
-        run: black --check .
+        run: |
+          . .venv/bin/activate
+          black --check .
 
       - name: Run Pylint
-        run: pylint app tests
+        run: |
+          . .venv/bin/activate
+          pylint app tests
 
       - name: Run Tests with Coverage
         run: |
+          . .venv/bin/activate
           coverage run -m pytest
           coverage report --fail-under=80
           coverage html
@@ -51,5 +60,3 @@ jobs:
         with:
           name: coverage-report
           path: htmlcov/
-
-# ![CI](https://github.com/47products/neighbour-approved/actions/workflows/ci.yml/badge.svg)
