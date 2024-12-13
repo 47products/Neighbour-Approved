@@ -17,15 +17,26 @@ router = APIRouter(
 @router.get("/", response_model=InfoResponse, summary="Get Application Info")
 def get_info() -> InfoResponse:
     """
-    Retrieve basic information about the Neighbour Approved application.
+    ## Retrieve Basic Application Information.
 
-    This endpoint returns the application's name and current version.
+    This endpoint returns the application's **name** and current **version**.
 
-    Returns:
-        InfoResponse: A Pydantic model containing the application's name and version.
+    **Returns:**
+    - **InfoResponse:** A Pydantic model containing the application's name and version.
 
-    Example:
-        GET /api/v1/info
-        Response: {"name": "Neighbour Approved", "version": "0.1.0"}
+    **Example:**
+
+    **Request:**
+    ```http
+    GET /api/v1/info
+    ```
+
+    **Response:**
+    ```json
+    {
+        "name": "Neighbour Approved",
+        "version": "0.1.0"
+    }
+    ```
     """
     return InfoResponse(name="Neighbour Approved", version="0.1.0")

@@ -11,7 +11,6 @@ APIs should be mounted from their respective routers as the project
 evolves.
 """
 
-from typing import Dict
 from fastapi import FastAPI
 from app.api.v1.routers import api_router
 
@@ -22,18 +21,3 @@ app = FastAPI(
 )
 
 app.include_router(api_router, prefix="/api/v1")
-
-
-@app.get("/health", response_model=Dict[str, str])
-def health_check() -> Dict[str, str]:
-    """
-    Check the health status of the application.
-
-    Returns:
-        Dict[str, str]: A JSON object containing a simple status message.
-
-    Example:
-        GET /health
-        Response: {"status": "ok"}
-    """
-    return {"status": "ok"}

@@ -24,7 +24,7 @@ def test_health_status_code():
     Expected Outcome:
     The /health endpoint should respond with HTTP 200 OK.
     """
-    response = client.get("/health")
+    response = client.get("/api/v1/health")
     assert response.status_code == 200, "Expected status code 200 for /health endpoint"
 
 
@@ -40,7 +40,7 @@ def test_health_response_content():
     Expected Outcome:
     The /health endpoint should return a JSON response with {"status": "ok"}.
     """
-    response = client.get("/health")
+    response = client.get("/api/v1/health")
     assert response.status_code == 200, "Expected status code 200 for /health endpoint"
     assert response.json() == {
         "status": "ok"
