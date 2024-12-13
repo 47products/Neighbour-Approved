@@ -1,0 +1,23 @@
+[run]
+source = app
+
+omit =
+    */tests/*
+    */migrations/*
+    */alembic/*
+    .venv/*
+    */env/*
+    */.venv/*
+    */__init__.py
+
+branch = True
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == '__main__':
+    def __repr__
+    def __str__
+
+show_missing = True
+skip_covered = False

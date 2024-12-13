@@ -1,5 +1,3 @@
-# File: tests/test_info.py
-
 """
 Test Module for the `/api/v1/info` Endpoint of Neighbour Approved Backend.
 

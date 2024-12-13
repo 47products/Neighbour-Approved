@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: Neighbour-Approved-Postgres17
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: YyZEuVdozDfFx4nzUWhzyaWgTvxvs6T2
+      POSTGRES_DB: neighbour_approved_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
