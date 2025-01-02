@@ -1,49 +1,57 @@
-"""
-This module configures Alembic for database migrations.
-"""
+"""Alembic environment configuration."""
 
 from logging.config import fileConfig
-import sys
 import os
+from pathlib import Path
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
+from dotenv import load_dotenv
 from alembic import context
-from app.db.config import Settings
+
+# Load environment variables from .env file
+env_path = Path(__file__).parents[2] / ".env"
+load_dotenv(env_path)
+
 from app.db.database import Base
+from app.db.config import Settings
+from app.db import models
 
-# Add the project directory to sys.path to ensure Alembic can find your modules
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "app"))
-)
-
-# Initialize Settings to access environment variables
-settings = Settings()
-
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# Load the Alembic configuration
 config = context.config
 
-# Override the sqlalchemy.url in Alembic config with the one from Settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
-
-# Interpret the config file for Python logging.
+# Configure logging from the alembic.ini file
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the target_metadata for 'autogenerate' support
+# Set the target metadata for migrations
 target_metadata = Base.metadata
 
 
+def get_url():
+    """Retrieve database URL from settings."""
+    try:
+        settings = Settings()
+        return str(settings.database_url)
+    except Exception as e:
+        print("\nError loading database configuration:")
+        print("Current environment variables:")
+        print(f"POSTGRES_USER: {os.getenv('POSTGRES_USER', 'Not set')}")
+        print(f"POSTGRES_HOST: {os.getenv('POSTGRES_HOST', 'Not set')}")
+        print(f"POSTGRES_DB: {os.getenv('POSTGRES_DB', 'Not set')}")
+        print("POSTGRES_PASSWORD: [Hidden]")
+        raise RuntimeError(f"Database configuration error: {str(e)}") from e
+
+
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
+    """Execute migrations in 'offline' mode."""
+    url = get_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_type=True,
     )
 
     with context.begin_transaction():
@@ -51,15 +59,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Execute migrations in 'online' mode."""
+    configuration = config.get_section(config.config_ini_section) or {}
+    configuration["sqlalchemy.url"] = get_url()
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection, target_metadata=target_metadata, compare_type=True
+        )
 
         with context.begin_transaction():
             context.run_migrations()

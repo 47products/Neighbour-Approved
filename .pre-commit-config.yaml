@@ -4,11 +4,3 @@ repos:
     hooks:
       - id: black
         language_version: python3
-
-  - repo: https://github.com/pylint-dev/pylint
-    rev: v3.3.2
-    hooks:
-      - id: pylint
-        additional_dependencies: 
-          - fastapi
-          - pydantic

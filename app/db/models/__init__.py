@@ -1,9 +1,84 @@
 """
-This module is used to import all the models in the database.
+Database models initialization module.
 
-The models are defined in separate modules to keep the code organized and easy to maintain.
+This module serves as the central point of access for all database models in the
+application. It provides organized imports of model classes while preventing
+circular dependencies. The module ensures proper initialization order and
+maintains a clean interface for accessing models throughout the application.
+
+The module also exports common database components like the Base class and
+custom types, making them easily accessible to other parts of the application.
 """
 
 from app.db.database import Base
-from .user import User
-from .contact import Contact
+from app.db.types import TZDateTime
+from app.db.models.user import User
+from app.db.models.role import Role
+from app.db.models.community import Community, PrivacyLevel
+from app.db.models.category import Category
+from app.db.models.service import Service
+from app.db.models.contact import Contact
+from app.db.models.contact_endorsement import ContactEndorsement
+
+# Version information
+__version__ = "1.0.0"
+
+# Export all models and related components
+__all__ = [
+    # Base classes and types
+    "Base",
+    "TZDateTime",
+    # Models
+    "User",
+    "Role",
+    "Community",
+    "Category",
+    "Service",
+    "Contact",
+    "ContactEndorsement",
+    # Enums and Constants
+    "PrivacyLevel",
+]
+
+# Model dependencies for reference
+model_dependencies = {
+    "User": ["Role", "Community", "Contact", "ContactEndorsement"],
+    "Role": ["User"],
+    "Community": ["User", "Contact", "ContactEndorsement"],
+    "Category": ["Contact", "Service"],
+    "Service": ["Category", "Contact"],
+    "Contact": ["User", "Community", "Category", "Service", "ContactEndorsement"],
+    "ContactEndorsement": ["User", "Community", "Contact"],
+}
+
+
+def get_model_class(model_name: str) -> type:
+    """
+    Get a model class by its name.
+
+    This function provides a way to dynamically access model classes,
+    which can be useful for generic operations or dynamic model handling.
+
+    Args:
+        model_name: Name of the model class to retrieve
+
+    Returns:
+        The requested model class
+
+    Raises:
+        ValueError: If the model name is not recognized
+    """
+    models = {
+        "User": User,
+        "Role": Role,
+        "Community": Community,
+        "Category": Category,
+        "Service": Service,
+        "Contact": Contact,
+        "ContactEndorsement": ContactEndorsement,
+    }
+
+    if model_name not in models:
+        raise ValueError(f"Unknown model: {model_name}")
+
+    return models[model_name]

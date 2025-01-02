@@ -1,5 +1,8 @@
 [run]
-source = app
+source =
+    app
+    app/db
+    app/db/models
 
 omit =
     */tests/*
@@ -7,7 +10,7 @@ omit =
     */alembic/*
     .venv/*
     */env/*
-    */.venv/*
+    */__pycache__/*
     */__init__.py
 
 branch = True

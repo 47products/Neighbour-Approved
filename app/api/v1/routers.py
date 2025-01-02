@@ -14,16 +14,22 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import info, health
 
 # Initialize the main API router without a prefix
-api_router = APIRouter(tags=["API v1"], responses={404: {"description": "Not Found"}})
+api_router = APIRouter(
+    prefix="/api/v1", tags=["API v1"], responses={404: {"description": "Not Found"}}
+)
 
 # Include the `info` router with its specific prefix and tag
 api_router.include_router(
-    info.router, tags=["Info"], responses={404: {"description": "Info Not Found"}}
+    info.router,
+    prefix="/info",
+    tags=["Info"],
+    responses={404: {"description": "Info Not Found"}},
 )
 
 # Include the `health` router without an additional prefix
 api_router.include_router(
     health.router,
+    prefix="/health",
     tags=["Health"],
     responses={404: {"description": "Health Endpoint Not Found"}},
 )

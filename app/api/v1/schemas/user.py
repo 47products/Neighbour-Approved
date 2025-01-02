@@ -35,9 +35,10 @@ class ContactResponse(BaseModel):
     """
 
     id: int
-    name: str
-    service: str
-    rating: float
+    contact_name: str
+    email: EmailStr
+    services: str
+    endorsements_count: int  # Changed from 'rating'
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,6 +118,7 @@ class UserResponse(BaseModel):
     country: Optional[str]
     created_at: Optional[datetime]
     updated_at: Optional[datetime]
+    email_verified: bool
     is_active: bool
     contacts: List[ContactResponse] = []
 
@@ -172,7 +174,6 @@ class UserUpdate(BaseModel):
     )
 
     @field_validator("mobile_number")
-    # pylint: disable=no-self-argument
     def validate_mobile_number(cls, v):
         """Validate the mobile number using the phone number validator."""
         return validate_phone_number(v)
