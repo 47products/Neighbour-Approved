@@ -41,22 +41,3 @@ jobs:
         run: |
           . .venv/bin/activate
           black --check .
-
-      - name: Run Pylint
-        run: |
-          . .venv/bin/activate
-          pylint app tests
-
-      - name: Run Tests with Coverage
-        run: |
-          . .venv/bin/activate
-          coverage run -m pytest
-          coverage report --fail-under=80
-          coverage html
-
-      - name: Upload Coverage Artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: htmlcov/

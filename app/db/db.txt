@@ -1,0 +1,2481 @@
+
+<<< Processing file: ./config.py >>>
+
+"""
+Configuration management module.
+
+This module implements the application's configuration management system using
+Pydantic V2's settings management. It provides a secure and validated approach to
+handling environment variables and sensitive configuration data while maintaining
+flexibility for different deployment environments.
+
+The module enforces proper validation of configuration values and provides clear
+error messages when required settings are missing or invalid. It integrates with
+environment variables and supports multiple configuration profiles for different
+deployment scenarios.
+"""
+
+from functools import lru_cache
+from pydantic import (
+    Field,
+    PostgresDsn,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
+from pydantic_settings import BaseSettings
+
+
+class DatabaseSettings(BaseSettings):
+    """
+    Database-specific configuration settings.
+
+    This class manages database connection parameters and credentials,
+    ensuring proper validation and secure handling of sensitive information.
+
+    Attributes:
+        POSTGRES_USER: Database username
+        POSTGRES_PASSWORD: Database password (stored securely)
+        POSTGRES_HOST: Database host address
+        POSTGRES_PORT: Database port number
+        POSTGRES_DB: Database name
+        ENABLE_SQL_ECHO: Flag to enable SQL query logging
+        MIN_POOL_SIZE: Minimum database connection pool size
+        MAX_POOL_SIZE: Maximum database connection pool size
+        POOL_RECYCLE_SECONDS: Connection recycle interval
+    """
+
+    POSTGRES_USER: str = Field(
+        ...,
+        description="Database username",
+    )
+    POSTGRES_PASSWORD: SecretStr = Field(
+        ...,
+        description="Database password",
+    )
+    POSTGRES_HOST: str = Field(
+        ...,
+        description="Database host address",
+    )
+    POSTGRES_PORT: int = Field(
+        default=5432,
+        description="Database port number",
+    )
+    POSTGRES_DB: str = Field(
+        ...,
+        description="Database name",
+    )
+    ENABLE_SQL_ECHO: bool = Field(
+        default=False,
+        description="Enable SQL query logging",
+    )
+    MIN_POOL_SIZE: int = Field(
+        default=5,
+        description="Minimum database connection pool size",
+    )
+    MAX_POOL_SIZE: int = Field(
+        default=20,
+        description="Maximum database connection pool size",
+    )
+    POOL_RECYCLE_SECONDS: int = Field(
+        default=1800,
+        description="Connection recycle interval in seconds",
+    )
+
+    @field_validator("POSTGRES_PORT")
+    @classmethod
+    def validate_port(cls, v: int) -> int:
+        """
+        Validate that the port number is within a valid range.
+
+        Args:
+            v: Port number to validate
+
+        Returns:
+            int: Validated port number
+
+        Raises:
+            ValueError: If port number is invalid
+        """
+        if not 1 <= v <= 65535:
+            raise ValueError("Port number must be between 1 and 65535")
+        return v
+
+    @field_validator("MIN_POOL_SIZE", "MAX_POOL_SIZE")
+    @classmethod
+    def validate_pool_size(cls, v: int) -> int:
+        """
+        Validate that pool sizes are positive integers.
+
+        Args:
+            v: Pool size to validate
+
+        Returns:
+            int: Validated pool size
+
+        Raises:
+            ValueError: If pool size is invalid
+        """
+        if v < 1:
+            raise ValueError("Pool size must be positive")
+        return v
+
+    @model_validator(mode="after")
+    def validate_pool_sizes(self) -> "DatabaseSettings":
+        """
+        Validate that minimum pool size is less than maximum.
+
+        Returns:
+            DatabaseSettings: The validated settings instance
+
+        Raises:
+            ValueError: If pool size configuration is invalid
+        """
+        if self.MIN_POOL_SIZE > self.MAX_POOL_SIZE:
+            raise ValueError(
+                "Minimum pool size cannot be greater than maximum pool size"
+            )
+        return self
+
+
+class Settings(DatabaseSettings):
+    """
+    Main application configuration settings.
+
+    This class extends database settings with additional application-wide
+    configuration parameters. It provides a centralized location for all
+    configuration management while ensuring proper validation and security.
+
+    Attributes:
+        APPLICATION_NAME: Name of the application
+        ENVIRONMENT: Deployment environment (development, staging, production)
+        DEBUG: Debug mode flag
+        API_PREFIX: Prefix for all API endpoints
+        CORS_ORIGINS: Allowed CORS origins
+    """
+
+    APPLICATION_NAME: str = Field(
+        "Neighbour Approved",
+        description="Application name",
+    )
+    ENVIRONMENT: str = Field(
+        "development",
+        description="Deployment environment",
+    )
+    DEBUG: bool = Field(
+        False,
+        description="Debug mode flag",
+    )
+    API_PREFIX: str = Field(
+        "/api",
+        description="API endpoint prefix",
+    )
+    CORS_ORIGINS: list[str] = Field(
+        default_factory=list,
+        description="Allowed CORS origins",
+    )
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": True,
+    }
+
+    @property
+    def database_url(self) -> PostgresDsn:
+        """
+        Construct the database URL from individual settings.
+
+        Returns:
+            PostgresDsn: Validated database URL
+        """
+        return PostgresDsn.build(
+            scheme="postgresql",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD.get_secret_value(),
+            host=self.POSTGRES_HOST,
+            port=self.POSTGRES_PORT,
+            path=f"/{self.POSTGRES_DB}",
+        )
+
+    @field_validator("ENVIRONMENT")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        """
+        Validate the deployment environment setting.
+
+        Args:
+            v: Environment name to validate
+
+        Returns:
+            str: Validated environment name
+
+        Raises:
+            ValueError: If environment name is invalid
+        """
+        allowed_environments = {"development", "staging", "production"}
+        if v.lower() not in allowed_environments:
+            raise ValueError(
+                f"Environment must be one of: {', '.join(allowed_environments)}"
+            )
+        return v.lower()
+
+    @field_validator("API_PREFIX")
+    @classmethod
+    def validate_api_prefix(cls, v: str) -> str:
+        """
+        Validate the API prefix format.
+
+        Args:
+            v: API prefix to validate
+
+        Returns:
+            str: Validated API prefix
+
+        Raises:
+            ValueError: If API prefix format is invalid
+        """
+        if not v.startswith("/"):
+            v = f"/{v}"
+        return v.rstrip("/")
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """
+    Create and cache application settings.
+
+    This function provides a cached instance of the settings class to avoid
+    repeated environment variable lookups and validation. The cache is
+    particularly useful in web applications where configuration is frequently
+    accessed.
+
+    Returns:
+        Settings: Cached settings instance
+    """
+    return Settings()
+
+
+<<< Processing file: ./database.py >>>
+
+"""
+Database configuration and engine setup module.
+
+This module establishes the core database configuration for the application,
+including the SQLAlchemy engine setup, session management, and declarative base
+configuration. It implements connection pooling and proper engine configuration
+for optimal database performance and reliability.
+
+The module integrates with the application's configuration management system
+to handle database credentials and connection parameters securely while
+providing flexibility for different deployment environments.
+"""
+
+from typing import Any, Dict
+from sqlalchemy import create_engine, event, Engine
+from sqlalchemy.engine import URL
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.pool import QueuePool
+
+from app.db.config import Settings
+
+# Initialize settings from environment
+settings = Settings()
+
+# Configure database connection parameters
+connection_args: Dict[str, Any] = {
+    "pool_pre_ping": True,  # Enable connection health checks
+    "pool_size": 5,  # Initial pool size
+    "max_overflow": 10,  # Maximum number of connections above pool_size
+    "pool_timeout": 30,  # Timeout for getting connection from pool
+    "pool_recycle": 1800,  # Recycle connections after 30 minutes
+    "echo": settings.ENABLE_SQL_ECHO,  # SQL query logging
+    "poolclass": QueuePool,  # Use QueuePool for connection pooling
+}
+
+# Create the database URL
+database_url = URL.create(
+    drivername="postgresql+psycopg2",
+    username=settings.POSTGRES_USER,
+    password=settings.POSTGRES_PASSWORD.get_secret_value(),
+    host=settings.POSTGRES_HOST,
+    port=settings.POSTGRES_PORT,
+    database=settings.POSTGRES_DB,
+)
+
+# Create the SQLAlchemy engine
+engine = create_engine(
+    database_url,
+    **connection_args,
+)
+
+# Create session factory
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+)
+
+# Create declarative base for models
+Base = declarative_base()
+
+
+@event.listens_for(Engine, "connect")
+def set_postgres_timezone(
+    dbapi_connection: Any,
+    _connection_record: Any,
+) -> None:
+    """
+    Set timezone to UTC for all database connections.
+
+    This event listener ensures that all database connections use UTC
+    timezone for consistent datetime handling across the application.
+
+    Args:
+        dbapi_connection: The raw database connection
+        connection_record: Connection pool record
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("SET TIME ZONE 'UTC'")
+    cursor.close()
+
+
+@event.listens_for(Engine, "connect")
+def set_search_path(
+    dbapi_connection: Any,
+    _connection_record: Any,
+) -> None:
+    """
+    Set the schema search path for all database connections.
+
+    This event listener configures the schema search path to ensure
+    proper schema resolution for database operations.
+
+    Args:
+        dbapi_connection: The raw database connection
+        connection_record: Connection pool record
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("SET search_path TO public")
+    cursor.close()
+
+
+def get_engine() -> Engine:
+    """
+    Get the configured database engine instance.
+
+    This function provides access to the database engine with all
+    connection pooling and configuration settings properly applied.
+
+    Returns:
+        Engine: Configured SQLAlchemy engine instance
+    """
+    return engine
+
+
+def create_session() -> Session:
+    """
+    Create a new database session.
+
+    This function creates a new session using the configured session
+    factory. It should be used when explicit session creation is needed
+    outside of the dependency injection system.
+
+    Returns:
+        Session: New database session instance
+    """
+    return SessionLocal()
+
+
+def verify_database_connection() -> bool:
+    """
+    Verify that the database connection is working.
+
+    This function attempts to establish a database connection and
+    execute a simple query to verify database accessibility.
+
+    Returns:
+        bool: True if connection is successful, False otherwise
+
+    Raises:
+        SQLAlchemyError: If database connection fails
+    """
+    try:
+        with create_session() as session:
+            session.execute("SELECT 1")
+        return True
+    except Exception as e:
+        # Add specific exception handling
+        from sqlalchemy.exc import SQLAlchemyError
+
+        if isinstance(e, SQLAlchemyError):
+            return False
+        raise
+
+
+def init_database() -> None:
+    """
+    Initialize the database with required tables and initial data.
+
+    This function creates all database tables based on the defined models
+    and performs any necessary initialization steps. It should be called
+    during application startup.
+    """
+    Base.metadata.create_all(bind=engine)
+
+
+<<< Processing file: ./session.py >>>
+
+"""
+Database session management module.
+
+This module provides utilities for managing database sessions within the application,
+ensuring proper handling of database connections and transactions. It implements
+a dependency that can be used in FastAPI endpoints to obtain database sessions
+that are automatically closed after use.
+
+The module follows best practices for connection management, including proper
+resource cleanup and error handling. It provides type-safe session handling
+while maintaining efficient connection pooling through SQLAlchemy.
+"""
+
+from typing import Generator, Any
+from contextlib import contextmanager
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, status
+
+from app.db.database import SessionLocal
+
+
+def get_db() -> Generator[Session, Any, None]:
+    """
+    FastAPI dependency that provides a database session and ensures proper cleanup.
+
+    This dependency yields a database session that can be used within FastAPI
+    endpoint functions. The session is automatically closed when the endpoint
+    processing is complete, ensuring proper resource management even in case
+    of errors.
+
+    Yields:
+        Session: An active database session from the connection pool
+
+    Raises:
+        HTTPException: If a database error occurs during session creation
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database error occurred",
+        ) from e
+    finally:
+        db.close()
+
+
+@contextmanager
+def session_scope() -> Generator[Session, Any, None]:
+    """
+    Context manager for handling database sessions in background tasks.
+
+    This context manager provides a database session with automatic commit/rollback
+    handling. It should be used for database operations outside of HTTP request
+    handling, such as background tasks or scheduled jobs.
+
+    Yields:
+        Session: An active database session
+
+    Example:
+        with session_scope() as session:
+            session.add(some_object)
+            # Session is automatically committed if no exception occurs
+    """
+    session = SessionLocal()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+class DatabaseSessionManager:
+    """
+    Manager class for handling database sessions with explicit lifecycle control.
+
+    This class provides methods for obtaining and managing database sessions
+    with explicit control over the session lifecycle. It's useful for cases
+    where the automatic session management through dependencies or context
+    managers isn't suitable.
+
+    Example:
+        session_manager = DatabaseSessionManager()
+        session = session_manager.get_session()
+        try:
+            # Use session
+            session_manager.commit(session)
+        except Exception:
+            session_manager.rollback(session)
+        finally:
+            session_manager.close(session)
+    """
+
+    @staticmethod
+    def get_session() -> Session:
+        """
+        Create and return a new database session.
+
+        Returns:
+            Session: A new database session
+        """
+        return SessionLocal()
+
+    @staticmethod
+    def commit(session: Session) -> None:
+        """
+        Commit the current transaction on the given session.
+
+        Args:
+            session: The database session to commit
+        """
+        session.commit()
+
+    @staticmethod
+    def rollback(session: Session) -> None:
+        """
+        Roll back the current transaction on the given session.
+
+        Args:
+            session: The database session to roll back
+        """
+        session.rollback()
+
+    @staticmethod
+    def close(session: Session) -> None:
+        """
+        Close the given database session.
+
+        Args:
+            session: The database session to close
+        """
+        session.close()
+
+
+<<< Processing file: ./types.py >>>
+
+"""Database type definitions for SQLAlchemy models."""
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any, Optional, Union
+from sqlalchemy import CheckConstraint, DateTime, TypeDecorator
+
+
+class TZDateTime(TypeDecorator):
+    """Custom SQLAlchemy type that enforces timezone-aware datetime fields."""
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: Optional[Union[datetime, Any]], dialect: Any
+    ) -> Optional[datetime]:
+        if value is not None:
+            if not value.tzinfo:
+                raise ValueError(
+                    "Timezone aware datetime is required. Please provide a "
+                    "datetime with tzinfo."
+                )
+            return value.astimezone(timezone.utc)
+        return value
+
+    def process_result_value(
+        self, value: Optional[Union[datetime, Any]], dialect: Any
+    ) -> Optional[datetime]:
+        if value is not None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
+
+
+class PrivacyLevel(str, Enum):
+    """Enumeration for community privacy levels."""
+
+    PUBLIC = "public"
+    PRIVATE = "private"
+    INVITATION_ONLY = "invitation_only"
+
+    @classmethod
+    def values(cls):
+        """Return all valid enum values."""
+        return [e.value for e in cls]
+
+
+def create_email_check_constraint(column_name: str) -> CheckConstraint:
+    """Create a check constraint for email format validation."""
+    return CheckConstraint(
+        f"{column_name} IS NULL OR "
+        f"{column_name} ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{{2,}}$'",
+        name=f"valid_{column_name}_format",
+    )
+
+
+<<< Processing file: ./models/service.py >>>
+
+"""
+Service model definition module.
+
+This module defines the Service model which represents specific services that
+contacts can offer within the application. Each service belongs to a category
+and maintains detailed information about the service offering, including
+pricing models and availability status.
+
+The module includes relationships with categories and contacts, ensuring proper
+organization of service offerings while maintaining data integrity through
+cascading operations and proper relationship management.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Table,
+    Numeric,
+    func,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+
+if TYPE_CHECKING:
+    from app.db.models.category import Category
+    from app.db.models.contact import Contact
+
+# Association table for Contact and Service
+contact_services = Table(
+    "contact_services",
+    Base.metadata,
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "service_id",
+        Integer,
+        ForeignKey("services.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class Service(Base):
+    """
+    Represents a specific service offering in the system.
+
+    Services are specific offerings that contacts can provide. Each service
+    belongs to a category and can be associated with multiple contacts.
+    Services include detailed information about pricing, availability,
+    and specific attributes of the offering.
+
+    Attributes:
+        id: Unique identifier for the service
+        name: Service name (unique within category)
+        description: Detailed description of the service
+        category_id: ID of the category this service belongs to
+        base_price: Base price for the service
+        price_unit: Unit of measurement for the price (e.g., 'hour', 'project')
+        is_active: Indicates if the service is currently available
+        created_at: Timestamp of service creation
+        updated_at: Timestamp of last update
+        minimum_hours: Minimum booking duration (if applicable)
+        maximum_hours: Maximum booking duration (if applicable)
+        requires_consultation: Whether initial consultation is required
+        is_remote_available: Whether service can be provided remotely
+
+    Relationships:
+        category: Category this service belongs to
+        contacts: Contacts that offer this service
+    """
+
+    __tablename__ = "services"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    description: Mapped[Optional[str]] = mapped_column(String(500))
+    category_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    base_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2),
+        comment="Base price for the service",
+    )
+    price_unit: Mapped[Optional[str]] = mapped_column(
+        String(20),
+        comment="Unit of measurement for the price",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    minimum_hours: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        comment="Minimum duration in hours",
+    )
+    maximum_hours: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        comment="Maximum duration in hours",
+    )
+    requires_consultation: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+    is_remote_available: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
+
+    # Relationships
+    category: Mapped["Category"] = relationship(
+        "Category",
+        back_populates="services",
+        lazy="joined",
+    )
+    contacts: Mapped[List["Contact"]] = relationship(
+        "Contact",
+        secondary=contact_services,
+        back_populates="services",
+        lazy="selectin",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        category_id: int,
+        description: Optional[str] = None,
+        base_price: Optional[Decimal] = None,
+        price_unit: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        """
+        Initialize a new Service instance.
+
+        Args:
+            name: The name of the service
+            category_id: ID of the category this service belongs to
+            description: Optional detailed description of the service
+            base_price: Optional base price for the service
+            price_unit: Optional unit of measurement for the price
+            **kwargs: Additional service attributes
+        """
+        super().__init__(
+            name=name,
+            category_id=category_id,
+            description=description,
+            base_price=base_price,
+            price_unit=price_unit,
+            **kwargs,
+        )
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the Service instance.
+
+        Returns:
+            String containing the service's ID and name
+        """
+        return f"Service(id={self.id}, name={self.name})"
+
+    def get_formatted_price(self) -> Optional[str]:
+        """
+        Get a formatted string representation of the service price.
+
+        Returns:
+            Formatted price string or None if price is not set
+        """
+        if self.base_price is None or self.price_unit is None:
+            return None
+
+        return f"${self.base_price:.2f} per {self.price_unit}"
+
+    def calculate_price(self, hours: Optional[int] = None) -> Optional[Decimal]:
+        """
+        Calculate the total price for a given duration.
+
+        Args:
+            hours: Number of hours requested (if applicable)
+
+        Returns:
+            Calculated total price or None if pricing cannot be determined
+
+        Raises:
+            ValueError: If hours is outside the allowed range
+        """
+        if self.base_price is None:
+            return None
+
+        if self.price_unit != "hour" or hours is None:
+            return self.base_price
+
+        if self.minimum_hours and hours < self.minimum_hours:
+            raise ValueError(f"Minimum booking duration is {self.minimum_hours} hours")
+
+        if self.maximum_hours and hours > self.maximum_hours:
+            raise ValueError(f"Maximum booking duration is {self.maximum_hours} hours")
+
+        return self.base_price * Decimal(str(hours))
+
+    def is_available_for_duration(self, hours: int) -> bool:
+        """
+        Check if the service can be booked for a specific duration.
+
+        Args:
+            hours: Number of hours requested
+
+        Returns:
+            True if the service can be booked for the specified duration
+        """
+        if not self.is_active:
+            return False
+
+        if self.minimum_hours and hours < self.minimum_hours:
+            return False
+
+        if self.maximum_hours and hours > self.maximum_hours:
+            return False
+
+        return True
+
+    @property
+    def duration_constraints(self) -> Optional[str]:
+        """
+        Get a human-readable description of duration constraints.
+
+        Returns:
+            String describing duration constraints or None if not applicable
+        """
+        if not (self.minimum_hours or self.maximum_hours):
+            return None
+
+        if self.minimum_hours and self.maximum_hours:
+            return f"Duration: {self.minimum_hours}-{self.maximum_hours} hours"
+
+        if self.minimum_hours:
+            return f"Minimum duration: {self.minimum_hours} hours"
+
+        return f"Maximum duration: {self.maximum_hours} hours"
+
+
+<<< Processing file: ./models/user.py >>>
+
+"""
+User model definition module.
+
+This module defines the User model and its relationships with other entities in the
+application. The User model serves as the central entity for user management,
+authentication, and authorization.
+
+The module includes association tables for many-to-many relationships with roles
+and communities, as well as comprehensive type hints and relationship definitions
+that ensure type safety and proper cascading behavior.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Table,
+    func,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime, create_email_check_constraint
+
+if TYPE_CHECKING:
+    from app.db.models.contact import Contact
+    from app.db.models.role import Role
+    from app.db.models.community import Community
+    from app.db.models.contact_endorsement import ContactEndorsement
+
+# Association table for User and Role relationship
+user_role_association = Table(
+    "user_roles",
+    Base.metadata,
+    Column(
+        "user_id",
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "role_id",
+        Integer,
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+# Association table for User and Community relationship
+user_community_association = Table(
+    "user_communities",
+    Base.metadata,
+    Column(
+        "user_id",
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "community_id",
+        Integer,
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class User(Base):
+    """
+    Represents a user in the system.
+
+    The User model is the central entity for user management, containing personal
+    information, authentication details, and relationships with other entities
+    such as roles, communities, and contacts.
+
+    Attributes:
+        id: Unique identifier for the user
+        email: User's email address (unique)
+        password: Hashed password for authentication
+        first_name: User's first name
+        last_name: User's last name
+        mobile_number: User's mobile phone number
+        postal_address: User's postal mailing address
+        physical_address: User's physical location address
+        country: User's country of residence
+        created_at: Timestamp of user creation
+        updated_at: Timestamp of last update
+        is_active: Flag indicating if the user account is active
+        email_verified: Flag indicating if the email has been verified
+        last_login: Timestamp of user's last login
+
+    Relationships:
+        contacts: User's contacts (one-to-many)
+        roles: User's assigned roles (many-to-many)
+        communities: Communities the user belongs to (many-to-many)
+        contact_endorsements: User's contact endorsements (one-to-many)
+        owned_communities: Communities owned by the user (one-to-many)
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    password: Mapped[str] = mapped_column(String(255), nullable=False)
+    first_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    mobile_number: Mapped[Optional[str]] = mapped_column(String(20))
+    postal_address: Mapped[Optional[str]] = mapped_column(String(200))
+    physical_address: Mapped[Optional[str]] = mapped_column(String(200))
+    country: Mapped[Optional[str]] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_login: Mapped[Optional[datetime]] = mapped_column(TZDateTime(timezone=True))
+
+    # Relationships
+    contacts: Mapped[List["Contact"]] = relationship(
+        "Contact",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+    roles: Mapped[List["Role"]] = relationship(
+        "Role",
+        secondary=user_role_association,
+        back_populates="users",
+        lazy="selectin",
+    )
+    communities: Mapped[List["Community"]] = relationship(
+        "Community",
+        secondary=user_community_association,
+        back_populates="members",
+        lazy="selectin",
+    )
+    contact_endorsements: Mapped[List["ContactEndorsement"]] = relationship(
+        "ContactEndorsement",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+    owned_communities: Mapped[List["Community"]] = relationship(
+        "Community",
+        foreign_keys="[Community.owner_id]",
+        back_populates="owner",
+        lazy="select",
+    )
+
+    __table_args__ = (create_email_check_constraint("email"),)
+
+    def __init__(
+        self,
+        email: str,
+        password: str,
+        first_name: str,
+        last_name: str,
+        **kwargs,
+    ) -> None:
+        """
+        Initialize a new User instance.
+
+        Args:
+            email: User's email address
+            password: User's hashed password
+            first_name: User's first name
+            last_name: User's last name
+            **kwargs: Additional user attributes
+        """
+        super().__init__(
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            **kwargs,
+        )
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the User instance.
+
+        Returns:
+            String containing the user's ID and email
+        """
+        return f"User(id={self.id}, email={self.email})"
+
+    @property
+    def full_name(self) -> str:
+        """
+        Get the user's full name.
+
+        Returns:
+            Concatenated first and last name
+        """
+        return f"{self.first_name} {self.last_name}"
+
+    def is_member_of(self, community_id: int) -> bool:
+        """
+        Check if the user is a member of a specific community.
+
+        Args:
+            community_id: ID of the community to check
+
+        Returns:
+            True if user is a member, False otherwise
+        """
+        return any(c.id == community_id for c in self.communities)
+
+    def has_role(self, role_name: str) -> bool:
+        """
+        Check if the user has a specific role.
+
+        Args:
+            role_name: Name of the role to check
+
+        Returns:
+            True if user has the role, False otherwise
+        """
+        return any(r.name == role_name for r in self.roles)
+
+
+<<< Processing file: ./models/__init__.py >>>
+
+"""
+Database models initialization module.
+
+This module serves as the central point of access for all database models in the
+application. It provides organized imports of model classes while preventing
+circular dependencies. The module ensures proper initialization order and
+maintains a clean interface for accessing models throughout the application.
+
+The module also exports common database components like the Base class and
+custom types, making them easily accessible to other parts of the application.
+"""
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+from app.db.models.user import User
+from app.db.models.role import Role
+from app.db.models.community import Community, PrivacyLevel
+from app.db.models.category import Category
+from app.db.models.service import Service
+from app.db.models.contact import Contact
+from app.db.models.contact_endorsement import ContactEndorsement
+
+# Version information
+__version__ = "1.0.0"
+
+# Export all models and related components
+__all__ = [
+    # Base classes and types
+    "Base",
+    "TZDateTime",
+    # Models
+    "User",
+    "Role",
+    "Community",
+    "Category",
+    "Service",
+    "Contact",
+    "ContactEndorsement",
+    # Enums and Constants
+    "PrivacyLevel",
+]
+
+# Model dependencies for reference
+model_dependencies = {
+    "User": ["Role", "Community", "Contact", "ContactEndorsement"],
+    "Role": ["User"],
+    "Community": ["User", "Contact", "ContactEndorsement"],
+    "Category": ["Contact", "Service"],
+    "Service": ["Category", "Contact"],
+    "Contact": ["User", "Community", "Category", "Service", "ContactEndorsement"],
+    "ContactEndorsement": ["User", "Community", "Contact"],
+}
+
+
+def get_model_class(model_name: str) -> type:
+    """
+    Get a model class by its name.
+
+    This function provides a way to dynamically access model classes,
+    which can be useful for generic operations or dynamic model handling.
+
+    Args:
+        model_name: Name of the model class to retrieve
+
+    Returns:
+        The requested model class
+
+    Raises:
+        ValueError: If the model name is not recognized
+    """
+    models = {
+        "User": User,
+        "Role": Role,
+        "Community": Community,
+        "Category": Category,
+        "Service": Service,
+        "Contact": Contact,
+        "ContactEndorsement": ContactEndorsement,
+    }
+
+    if model_name not in models:
+        raise ValueError(f"Unknown model: {model_name}")
+
+    return models[model_name]
+
+
+<<< Processing file: ./models/role.py >>>
+
+"""
+Role model definition module.
+
+This module defines the Role model which manages user permissions and access control
+within the application. The Role model supports both system-defined and custom roles,
+each with configurable permissions and descriptions.
+
+The module includes type-safe relationship definitions and proper handling of
+timezone-aware timestamps, ensuring consistent behavior across the application.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+import json
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import Boolean, String, func
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
+
+
+class Role(Base):
+    """
+    Represents a role in the system.
+
+    A role defines a set of permissions and access levels that can be assigned to users.
+    Roles can be either system-defined (managed by the application) or custom-created.
+    Each role maintains its creation and update timestamps, along with an active status.
+
+    Attributes:
+        id: Unique identifier for the role
+        name: Role name (unique across the system)
+        description: Detailed description of the role's purpose
+        permissions: JSON string containing role permissions
+        created_at: Timestamp of role creation
+        updated_at: Timestamp of last update
+        is_system_role: Indicates if this is a system-managed role
+        is_active: Indicates if the role is currently active
+
+    Relationships:
+        users: Users assigned to this role (many-to-many)
+    """
+
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    description: Mapped[Optional[str]] = mapped_column(String(200))
+    permissions: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        doc="JSON string containing role permissions",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    is_system_role: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Indicates if this is a system-managed role",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+
+    # Relationships
+    users: Mapped[List["User"]] = relationship(
+        "User",
+        secondary="user_roles",
+        back_populates="roles",
+        lazy="selectin",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        description: Optional[str] = None,
+        permissions: Optional[str] = None,
+        is_system_role: bool = False,
+    ) -> None:
+        """
+        Initialize a new Role instance.
+
+        Args:
+            name: The name of the role
+            description: Optional description of the role's purpose
+            permissions: Optional JSON string of role permissions
+            is_system_role: Whether this is a system-managed role
+        """
+        super().__init__(
+            name=name,
+            description=description,
+            permissions=permissions,
+            is_system_role=is_system_role,
+        )
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the Role instance.
+
+        Returns:
+            String containing the role's ID and name
+        """
+        return f"Role(id={self.id}, name={self.name})"
+
+    def has_permission(self, permission: str) -> bool:
+        """
+        Check if the role has a specific permission.
+
+        Args:
+            permission: The permission to check for
+
+        Returns:
+            True if the role has the permission, False otherwise
+        """
+        if not self.permissions or not self.is_active:
+            return False
+
+        try:
+            permissions = json.loads(self.permissions)
+            return permission in permissions
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+    def grant_permission(self, permission: str) -> None:
+        """
+        Grant a new permission to the role.
+
+        Args:
+            permission: The permission to grant
+        """
+
+        try:
+            permissions = json.loads(self.permissions) if self.permissions else []
+        except (json.JSONDecodeError, TypeError):
+            permissions = []
+
+        if permission not in permissions:
+            permissions.append(permission)
+            self.permissions = json.dumps(permissions)
+
+    def revoke_permission(self, permission: str) -> None:
+        """
+        Revoke a permission from the role.
+
+        Args:
+            permission: The permission to revoke
+        """
+
+        try:
+            permissions = json.loads(self.permissions) if self.permissions else []
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        if permission in permissions:
+            permissions.remove(permission)
+            self.permissions = json.dumps(permissions)
+
+
+<<< Processing file: ./models/community.py >>>
+
+"""
+Community model definition module.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+import enum
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Table,
+    UniqueConstraint,
+    func,
+    Enum as SQLAlchemyEnum,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
+    from app.db.models.contact import Contact
+    from app.db.models.contact_endorsement import ContactEndorsement
+
+
+class PrivacyLevel(str, enum.Enum):
+    """Enumeration for community privacy levels."""
+    PUBLIC = "public"
+    PRIVATE = "private"
+    INVITATION_ONLY = "invitation_only"
+
+
+COMMUNITIES_ID = "communities.id"
+
+# Association table for users and communities
+user_communities = Table(
+    "user_communities",
+    Base.metadata,
+    Column(
+        "user_id",
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "community_id",
+        Integer,
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    UniqueConstraint("user_id", "community_id", name="uq_user_community"),
+)
+
+community_relationships = Table(
+    "community_relationships",
+    Base.metadata,
+    Column(
+        "community_a_id",
+        Integer,
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "community_b_id",
+        Integer,
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+community_contacts = Table(
+    "community_contacts",
+    Base.metadata,
+    Column(
+        "community_id",
+        Integer,
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class Community(Base):
+    """Represents a community group in the system."""
+
+    __tablename__ = "communities"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    description: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    owner_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+    privacy_level: Mapped[PrivacyLevel] = mapped_column(
+        SQLAlchemyEnum(PrivacyLevel, name="privacy_level_enum"),
+        default=PrivacyLevel.PUBLIC,
+        nullable=False,
+    )
+    member_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    contact_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+
+    # Relationships
+    owner: Mapped["User"] = relationship(
+        "User",
+        foreign_keys=[owner_id],
+        back_populates="owned_communities",
+        lazy="joined",
+    )
+    members: Mapped[List["User"]] = relationship(
+        "User",
+        secondary=user_communities,
+        back_populates="communities",
+        lazy="selectin",
+    )
+    contacts: Mapped[List["Contact"]] = relationship(
+        "Contact",
+        secondary=community_contacts,
+        back_populates="communities",
+        lazy="selectin",
+    )
+    related_communities: Mapped[List["Community"]] = relationship(
+        "Community",
+        secondary=community_relationships,
+        primaryjoin=id == community_relationships.c.community_a_id,
+        secondaryjoin=id == community_relationships.c.community_b_id,
+        back_populates="related_to_communities",
+        lazy="selectin",
+    )
+    related_to_communities: Mapped[List["Community"]] = relationship(
+        "Community",
+        secondary=community_relationships,
+        primaryjoin=id == community_relationships.c.community_b_id,
+        secondaryjoin=id == community_relationships.c.community_a_id,
+        back_populates="related_communities",
+        lazy="selectin",
+    )
+    contact_endorsements: Mapped[List["ContactEndorsement"]] = relationship(
+        "ContactEndorsement",
+        back_populates="community",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+
+<<< Processing file: ./models/contact_endorsement.py >>>
+
+"""
+Contact Endorsement model definition module.
+
+This module defines the ContactEndorsement model which manages endorsements and
+ratings for contacts within communities. The model tracks user endorsements,
+maintains rating information, and handles endorsement verification to build
+trust within the community network.
+
+The module implements comprehensive validation rules and maintains data integrity
+through proper relationship management and constraint handling. It includes
+detailed type hints and documentation to ensure proper usage throughout the
+application.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, Optional
+from sqlalchemy import (
+    Boolean,
+    Integer,
+    String,
+    ForeignKey,
+    CheckConstraint,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
+    from app.db.models.community import Community
+    from app.db.models.contact import Contact
+
+
+class ContactEndorsement(Base):
+    """
+    Represents an endorsement of a contact within a community.
+
+    ContactEndorsements track user recommendations and ratings for contacts
+    within specific communities. Each endorsement can include a rating and
+    detailed comment, and may be verified to increase trust in the system.
+    The model maintains proper timestamps and verification status.
+
+    Attributes:
+        id: Unique identifier for the endorsement
+        contact_id: ID of the endorsed contact
+        user_id: ID of the endorsing user
+        community_id: ID of the community context
+        endorsed: Whether the endorsement is positive
+        rating: Optional numerical rating (1-5)
+        comment: Optional detailed endorsement text
+        created_at: Timestamp of endorsement creation
+        updated_at: Timestamp of last update
+        is_verified: Whether the endorsement is verified
+        verification_date: When the endorsement was verified
+        verification_notes: Optional notes about verification
+        is_public: Whether the endorsement is publicly visible
+
+    Relationships:
+        user: User who provided the endorsement
+        community: Community context of the endorsement
+        contact: Contact being endorsed
+    """
+
+    __tablename__ = "contact_endorsements"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    community_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    endorsed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        doc="Indicates if this is a positive endorsement",
+    )
+    rating: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        CheckConstraint("rating >= 1 AND rating <= 5"),
+        doc="Optional rating from 1 to 5",
+    )
+    comment: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        doc="Optional detailed endorsement comment",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Indicates if the endorsement is verified",
+    )
+    verification_date: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        doc="When the endorsement was verified",
+    )
+    verification_notes: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        doc="Optional notes about verification process",
+    )
+    is_public: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        doc="Whether the endorsement is publicly visible",
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="contact_endorsements",
+        lazy="joined",
+    )
+    community: Mapped["Community"] = relationship(
+        "Community",
+        back_populates="contact_endorsements",
+        lazy="joined",
+    )
+    contact: Mapped["Contact"] = relationship(
+        "Contact",
+        back_populates="endorsements",
+        lazy="joined",
+    )
+
+    __table_args__ = (
+        # Ensure unique endorsement per user per contact per community
+        UniqueConstraint(
+            "user_id",
+            "contact_id",
+            "community_id",
+            name="uq_user_contact_community_endorsement",
+        ),
+        # Rating range check
+        CheckConstraint(
+            "rating IS NULL OR (rating >= 1 AND rating <= 5)", name="valid_rating_range"
+        ),
+    )
+
+    def __init__(
+        self,
+        contact_id: int,
+        user_id: int,
+        community_id: int,
+        endorsed: bool = True,
+        rating: Optional[int] = None,
+        comment: Optional[str] = None,
+        is_public: bool = True,
+    ) -> None:
+        """
+        Initialize a new ContactEndorsement instance.
+
+        Args:
+            contact_id: ID of the contact being endorsed
+            user_id: ID of the endorsing user
+            community_id: ID of the community context
+            endorsed: Whether this is a positive endorsement
+            rating: Optional rating from 1 to 5
+            comment: Optional detailed comment
+            is_public: Whether the endorsement should be public
+        """
+        super().__init__(
+            contact_id=contact_id,
+            user_id=user_id,
+            community_id=community_id,
+            endorsed=endorsed,
+            rating=rating,
+            comment=comment,
+            is_public=is_public,
+        )
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the ContactEndorsement instance.
+
+        Returns:
+            String containing the endorsement's key information
+        """
+        return (
+            f"ContactEndorsement(id={self.id}, "
+            f"contact_id={self.contact_id}, "
+            f"user_id={self.user_id})"
+        )
+
+    def verify(
+        self,
+        verification_notes: Optional[str] = None,
+    ) -> None:
+        """
+        Mark the endorsement as verified with optional notes.
+
+        Args:
+            verification_notes: Optional notes about the verification process
+        """
+        self.is_verified = True
+        self.verification_date = datetime.now()
+        if verification_notes:
+            self.verification_notes = verification_notes
+
+    def update_rating(
+        self,
+        new_rating: Optional[int],
+        comment: Optional[str] = None,
+    ) -> None:
+        """
+        Update the endorsement's rating and optionally the comment.
+
+        Args:
+            new_rating: New rating value (1-5) or None
+            comment: Optional new comment text
+
+        Raises:
+            ValueError: If the rating is not between 1 and 5
+        """
+        if new_rating is not None and not 1 <= new_rating <= 5:
+            raise ValueError("Rating must be between 1 and 5")
+
+        self.rating = new_rating
+        if comment is not None:
+            self.comment = comment
+
+    def toggle_visibility(self) -> None:
+        """
+        Toggle the public visibility of the endorsement.
+        """
+        self.is_public = not self.is_public
+
+    @property
+    def verification_status(self) -> str:
+        """
+        Get a human-readable verification status.
+
+        Returns:
+            String describing the current verification status
+        """
+        if not self.is_verified:
+            return "Unverified"
+        if self.verification_notes:
+            return f"Verified with notes: {self.verification_notes}"
+        return "Verified"
+
+    @property
+    def formatted_rating(self) -> Optional[str]:
+        """
+        Get a formatted display of the rating.
+
+        Returns:
+            Formatted rating string or None if no rating
+        """
+        if self.rating is None:
+            return None
+        return f"{self.rating}/5 stars"
+
+
+<<< Processing file: ./models/category.py >>>
+
+"""
+Category model definition module.
+
+This module defines the Category model which provides a hierarchical organization
+system for classifying contacts and services within the application. Categories
+can be nested to create a taxonomy that enables efficient organization and
+discovery of resources.
+
+The module includes relationships with contacts and services, along with 
+self-referential relationships for managing category hierarchies. It supports
+proper handling of timezone-aware timestamps and maintains data integrity
+through cascading operations.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    Table,
+    func,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from app.db.database import Base
+from app.db.types import TZDateTime
+
+if TYPE_CHECKING:
+    from app.db.models.contact import Contact
+    from app.db.models.service import Service
+
+# Association table for Contact and Category
+contact_categories = Table(
+    "contact_categories",
+    Base.metadata,
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "category_id",
+        Integer,
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+)
+
+
+class Category(Base):
+    """
+    Represents a category in the system's classification hierarchy.
+
+    Categories form a hierarchical structure for organizing contacts and services.
+    Each category can have multiple child categories and belongs to a single
+    parent category. This enables the creation of detailed taxonomies for
+    precise classification of system resources.
+
+    Attributes:
+        id: Unique identifier for the category
+        name: Category name (unique within its level)
+        description: Detailed description of the category's purpose
+        slug: URL-friendly version of the name
+        parent_id: ID of the parent category (None for root categories)
+        is_active: Indicates if the category is currently active
+        sort_order: Position in the display order
+        created_at: Timestamp of category creation
+        updated_at: Timestamp of last update
+        depth: Level in the category hierarchy (0 for root)
+        path: Full path from root to this category
+
+    Relationships:
+        parent: Parent category (if any)
+        children: Child categories
+        contacts: Contacts assigned to this category
+        services: Services belonging to this category
+    """
+
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    description: Mapped[Optional[str]] = mapped_column(String(255))
+    slug: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        index=True,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+    depth: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    path: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    # Relationships
+    parent: Mapped[Optional["Category"]] = relationship(
+        "Category",
+        back_populates="children",
+        remote_side=[id],
+        lazy="joined",
+    )
+    children: Mapped[List["Category"]] = relationship(
+        "Category",
+        back_populates="parent",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    contacts: Mapped[List["Contact"]] = relationship(
+        "Contact",
+        secondary=contact_categories,
+        back_populates="categories",
+        lazy="selectin",
+    )
+    services: Mapped[List["Service"]] = relationship(
+        "Service",
+        back_populates="category",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        slug: str,
+        *,  # Force keyword arguments
+        description: Optional[str] = None,
+        parent: Optional[Category] = None,
+        sort_order: int = 0,
+    ) -> None:
+        """
+        Initialize a new Category instance.
+
+        Args:
+            name: The name of the category
+            slug: URL-friendly version of the name
+            description: Optional description of the category's purpose
+            parent: Optional parent category
+            sort_order: Display order position (default is 0)
+        """
+        super().__init__(
+            name=name,
+            slug=slug,
+            description=description,
+            parent=parent,
+            sort_order=sort_order,
+        )
+        self._update_hierarchy_info()
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the Category instance.
+
+        Returns:
+            String containing the category's ID and name
+        """
+        return f"Category(id={self.id}, name={self.name})"
+
+    def _update_hierarchy_info(self) -> None:
+        """
+        Update the category's hierarchy information.
+
+        This internal method updates the depth and path attributes based
+        on the category's position in the hierarchy.
+        """
+        if self.parent:
+            self.depth = self.parent.depth + 1
+            self.path = f"{self.parent.path}/{self.slug}"
+        else:
+            self.depth = 0
+            self.path = self.slug
+
+    def get_ancestors(self) -> List[Category]:
+        """
+        Get all ancestor categories in order from root to parent.
+
+        Returns:
+            List of ancestor categories
+        """
+        ancestors = []
+        current = self.parent
+        while current:
+            ancestors.insert(0, current)
+            current = current.parent
+        return ancestors
+
+    def get_descendants(self) -> List[Category]:
+        """
+        Get all descendant categories in depth-first order.
+
+        Returns:
+            List of descendant categories
+        """
+        descendants = []
+        for child in self.children:
+            descendants.append(child)
+            descendants.extend(child.get_descendants())
+        return descendants
+
+    def is_ancestor_of(self, category: Category) -> bool:
+        """
+        Check if this category is an ancestor of another category.
+
+        Args:
+            category: The category to check
+
+        Returns:
+            True if this category is an ancestor of the given category
+        """
+        return self.path in category.path.split("/")
+
+    def is_descendant_of(self, category: Category) -> bool:
+        """
+        Check if this category is a descendant of another category.
+
+        Args:
+            category: The category to check
+
+        Returns:
+            True if this category is a descendant of the given category
+        """
+        return category.path in self.path.split("/")
+
+    def move_to_parent(self, new_parent: Optional[Category]) -> None:
+        """
+        Move this category to a new parent category.
+
+        Args:
+            new_parent: The new parent category (None for root level)
+
+        Raises:
+            ValueError: If the move would create a circular reference
+        """
+        if new_parent and (self == new_parent or new_parent.is_descendant_of(self)):
+            raise ValueError("Cannot move category to one of its descendants")
+
+        self.parent = new_parent
+        self._update_hierarchy_info()
+
+        for descendant in self.get_descendants():
+            descendant._update_hierarchy_info()
+
+
+<<< Processing file: ./models/contact.py >>>
+
+"""
+Contact model definition module.
+
+This module defines the Contact model which serves as the central entity for
+managing service provider information within the application. The Contact model
+maintains detailed information about service providers, their relationships with
+communities, and the endorsements they receive.
+
+The module implements proper data validation, relationship management, and
+maintains data integrity through cascading operations and proper constraint
+handling. It includes comprehensive type hints and documentation to ensure
+proper usage throughout the application.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Optional
+from sqlalchemy import (
+    Boolean,
+    Integer,
+    String,
+    ForeignKey,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, relationship, mapped_column
+from sqlalchemy.ext.hybrid import hybrid_property
+
+from app.db.database import Base
+from app.db.types import TZDateTime, create_email_check_constraint
+
+if TYPE_CHECKING:
+    from app.db.models.user import User
+    from app.db.models.community import Community
+    from app.db.models.category import Category
+    from app.db.models.service import Service
+    from app.db.models.contact_endorsement import ContactEndorsement
+
+
+class Contact(Base):
+    """
+    Represents a service provider contact in the system.
+
+    Contact entities store comprehensive information about service providers,
+    including their professional details, service offerings, and community
+    relationships. Each contact can receive endorsements from community members
+    and offer multiple services across different categories.
+
+    Attributes:
+        id: Unique identifier for the contact
+        user_id: ID of the user who created this contact
+        contact_name: Business or organization name
+        email: Primary contact email address
+        contact_number: Primary phone number
+        primary_contact_first_name: First name of main contact person
+        primary_contact_last_name: Last name of main contact person
+        primary_contact_contact_number: Direct number for main contact
+        endorsements_count: Number of endorsements received
+        average_rating: Average rating from endorsements
+        verified_endorsements_count: Number of verified endorsements
+        is_active: Whether the contact is currently active
+        created_at: Timestamp of contact creation
+        updated_at: Timestamp of last update
+
+    Relationships:
+        user: User who created this contact
+        communities: Communities this contact belongs to
+        categories: Service categories offered
+        services: Specific services offered
+        endorsements: Endorsements received from community members
+    """
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    contact_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    email: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+    )
+    contact_number: Mapped[Optional[str]] = mapped_column(String(20))
+    primary_contact_first_name: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    primary_contact_last_name: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    primary_contact_contact_number: Mapped[Optional[str]] = mapped_column(
+        String(20),
+    )
+    endorsements_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    average_rating: Mapped[Optional[float]] = mapped_column(
+        Integer,
+        comment="Average rating out of 5",
+    )
+    verified_endorsements_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="contacts",
+        lazy="joined",
+    )
+    communities: Mapped[List["Community"]] = relationship(
+        "Community",
+        secondary="community_contacts",
+        back_populates="contacts",
+        lazy="selectin",
+    )
+    categories: Mapped[List["Category"]] = relationship(
+        "Category",
+        secondary="contact_categories",
+        back_populates="contacts",
+        lazy="selectin",
+    )
+    services: Mapped[List["Service"]] = relationship(
+        "Service",
+        secondary="contact_services",
+        back_populates="contacts",
+        lazy="selectin",
+    )
+    endorsements: Mapped[List["ContactEndorsement"]] = relationship(
+        "ContactEndorsement",
+        back_populates="contact",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    __table_args__ = (
+        # Email format check
+        create_email_check_constraint("email"),
+        # Unique constraint for contact-community relationship
+        UniqueConstraint(
+            "contact_name", "community_id", name="uq_contact_name_per_community"
+        ),
+    )
+
+    def __init__(
+        self,
+        user_id: int,
+        contact_name: str,
+        *,  # Force keyword arguments
+        primary_contact_first_name: str,
+        primary_contact_last_name: str,
+        email: Optional[str] = None,
+        contact_number: Optional[str] = None,
+        primary_contact_contact_number: Optional[str] = None,
+    ) -> None:
+        """
+        Initialize a new Contact instance.
+
+        Args:
+            user_id: ID of the user creating the contact
+            contact_name: Business or organization name
+            primary_contact_first_name: First name of main contact person
+            primary_contact_last_name: Last name of main contact person
+            email: Optional email address
+            contact_number: Optional primary phone number
+            primary_contact_contact_number: Optional direct number for main contact
+        """
+        super().__init__(
+            user_id=user_id,
+            contact_name=contact_name,
+            primary_contact_first_name=primary_contact_first_name,
+            primary_contact_last_name=primary_contact_last_name,
+            email=email,
+            contact_number=contact_number,
+            primary_contact_contact_number=primary_contact_contact_number,
+        )
+
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the Contact instance.
+
+        Returns:
+            String containing the contact's ID and name
+        """
+        return f"Contact(id={self.id}, name={self.contact_name})"
+
+    @hybrid_property
+    def primary_contact_full_name(self) -> str:
+        """
+        Get the full name of the primary contact person.
+
+        Returns:
+            Concatenated first and last name
+        """
+        return f"{self.primary_contact_first_name} {self.primary_contact_last_name}"
+
+    def add_endorsement(self, endorsement: "ContactEndorsement") -> None:
+        """
+        Add a new endorsement to the contact and update metrics.
+
+        This method handles the addition of a new endorsement while maintaining
+        accurate counts and average ratings.
+
+        Args:
+            endorsement: The endorsement to add
+        """
+        self.endorsements.append(endorsement)
+        self.endorsements_count += 1
+
+        if endorsement.is_verified:
+            self.verified_endorsements_count += 1
+
+        if endorsement.rating:
+            self._update_average_rating()
+
+    def remove_endorsement(self, endorsement: "ContactEndorsement") -> None:
+        """
+        Remove an endorsement from the contact and update metrics.
+
+        This method handles the removal of an endorsement while maintaining
+        accurate counts and average ratings.
+
+        Args:
+            endorsement: The endorsement to remove
+        """
+        if endorsement in self.endorsements:
+            self.endorsements.remove(endorsement)
+            self.endorsements_count -= 1
+
+            if endorsement.is_verified:
+                self.verified_endorsements_count -= 1
+
+            if endorsement.rating:
+                self._update_average_rating()
+
+    def _update_average_rating(self) -> None:
+        """
+        Update the average rating based on current endorsements.
+
+        This internal method recalculates the average rating considering
+        only endorsements with valid ratings.
+        """
+        rated_endorsements = [e for e in self.endorsements if e.rating is not None]
+        if rated_endorsements:
+            total_rating = sum(e.rating for e in rated_endorsements)
+            self.average_rating = round(total_rating / len(rated_endorsements), 1)
+        else:
+            self.average_rating = None
+
+    def verify_endorsement(self, endorsement: "ContactEndorsement") -> None:
+        """
+        Mark an endorsement as verified and update verification counts.
+
+        Args:
+            endorsement: The endorsement to verify
+
+        Raises:
+            ValueError: If the endorsement is not associated with this contact
+        """
+        if endorsement not in self.endorsements:
+            raise ValueError("Endorsement does not belong to this contact")
+
+        if not endorsement.is_verified:
+            endorsement.is_verified = True
+            endorsement.verification_date = datetime.now()
+            self.verified_endorsements_count += 1
+
+    def get_services_by_category(self, category_id: int) -> List["Service"]:
+        """
+        Get all services offered by this contact in a specific category.
+
+        Args:
+            category_id: ID of the category to filter by
+
+        Returns:
+            List of services in the specified category
+        """
+        return [s for s in self.services if s.category_id == category_id]
+
+    def is_endorsed_in_community(self, community_id: int) -> bool:
+        """
+        Check if the contact has any endorsements in a specific community.
+
+        Args:
+            community_id: ID of the community to check
+
+        Returns:
+            True if the contact has endorsements in the community
+        """
+        return any(e.community_id == community_id for e in self.endorsements)
+

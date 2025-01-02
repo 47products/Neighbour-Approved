@@ -1,5 +1,6 @@
 .DS_Store
 .venv
 __pycache__
-tests/__pycache__/test_*.pyc
+*/__pycache__
 .env
+tmp/
