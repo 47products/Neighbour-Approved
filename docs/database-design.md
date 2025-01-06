@@ -1,4 +1,4 @@
-# Neighbour Approved Database Design Documentation
+# Updated Neighbour Approved Database Design Document
 
 ## Table of Contents
 
@@ -8,142 +8,75 @@
 4. [Database Schema](#database-schema)
 5. [Relationships and Constraints](#relationships-and-constraints)
 6. [Performance Optimization](#performance-optimization)
-7. [Implementation Status](#implementation-status)
+7. [Audit and Security](#audit-and-security)
+8. [Implementation Status](#implementation-status)
+
+---
 
 ## Overview
 
-The Neighbour Approved platform uses PostgreSQL as its primary database system, implementing a robust relational model for managing communities, users, service providers, and endorsements. The design prioritizes:
+Neighbour Approved's database is designed to provide a robust and scalable foundation for a community-centric platform, with PostgreSQL as the core database system. The primary objectives are:
 
-- Data integrity and consistency
-- Query performance optimization
-- Scalability and maintainability
-- Security and access control
-- Audit trail capabilities
+- **Data Integrity:** Ensure consistent and reliable data across all modules.
+- **Flexibility:** Support for community-based relationships, endorsements, and hierarchies.
+- **Performance:** Optimized for querying, filtering, and accessing structured data.
+- **Security:** Secure storage of sensitive information.
 
 ### Core Features
 
 - Role-based access control
-- Hierarchical category management
-- Community-based endorsement system
-- Service provider verification
-- Flexible service categorization
+- Community and service management
+- Hierarchical relationships
+- Verification and audit tracking
+- Scalable endorsement system
+
+---
 
 ## System Architecture
 
-### High-Level System View
+### High-Level Overview
 
 ```mermaid
 graph TB
-    subgraph Client Layer
-        Web[Web Application]
-        Mobile[Mobile Apps]
-        API[API Clients]
-    end
-
-    subgraph Application Layer
-        Auth[Authentication]
-        Services[Service Layer]
-        Cache[Cache Layer]
-    end
-
-    subgraph Database Layer
-        DB[(PostgreSQL)]
-        Search[Search Index]
-        Analytics[Analytics Store]
-    end
-
-    Web --> Auth
-    Mobile --> Auth
-    API --> Auth
-    Auth --> Services
-    Services --> Cache
-    Services --> DB
-    DB --> Search
-    DB --> Analytics
+    Client["Client Layer"] --> API["API Layer"] --> Services["Service Layer"] --> DB["Database"]
+    Services --> Cache["Cache"]
+    DB --> Analytics["Analytics Store"]
 ```
 
 ### Authentication Flow
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant A as Auth Service
-    participant R as Role Service
-    participant D as Database
-
-    U->>A: Login Request
-    A->>D: Verify Credentials
-    D-->>A: User Data
-    A->>R: Get User Roles
-    R->>D: Fetch Role Permissions
-    D-->>R: Role Data
-    R-->>A: Role Permissions
-    A-->>U: Auth Token + Permissions
+    participant User
+    participant AuthService
+    participant DB
+    User ->> AuthService: Login request
+    AuthService ->> DB: Validate credentials
+    DB -->> AuthService: User data
+    AuthService -->> User: Auth token
 ```
+
+---
 
 ## Data Models
 
-### Core Entity Relationships
+### Entity Relationship Overview
 
 ```mermaid
 erDiagram
-    User ||--o{ Community : owns
-    User ||--o{ Contact : creates
-    User }|--|| Role : has
-    
-    Community ||--o{ Contact : contains
-    Community ||--o{ ContactEndorsement : contextualizes
-    Community ||--o{ Community : relates_to
-    
-    Contact ||--o{ ContactEndorsement : receives
-    Contact }o--o{ Category : belongs_to
-    Contact }o--o{ Service : offers
-    
-    Service }|--|| Category : categorized_in
+    User ||--o{ Role : "has"
+    User ||--o{ Community : "owns"
+    User ||--o{ Contact : "creates"
+
+    Community ||--o{ Contact : "contains"
+    Community ||--o{ Endorsement : "contextualizes"
+    Contact ||--o{ Endorsement : "receives"
+
+    Category ||--o{ Contact : "classifies"
+    Category ||--o{ Service : "organizes"
 ```
 
-### Category Hierarchy
-
-```mermaid
-graph TD
-    R[Root Category] --> A[Category A]
-    R --> B[Category B]
-    A --> A1[Sub-Category A1]
-    A --> A2[Sub-Category A2]
-    B --> B1[Sub-Category B1]
-    B --> B2[Sub-Category B2]
-    A1 --> A1X[Sub-Sub-Category A1X]
-    style R fill:#f9f,stroke:#333,stroke-width:4px
-```
-
-### Service Organization
-
-```mermaid
-graph LR
-    subgraph Categories
-        C1[Category 1]
-        C2[Category 2]
-    end
-    
-    subgraph Services
-        S1[Service 1]
-        S2[Service 2]
-        S3[Service 3]
-    end
-    
-    subgraph Contacts
-        P1[Provider 1]
-        P2[Provider 2]
-    end
-    
-    C1 --> S1
-    C1 --> S2
-    C2 --> S3
-    S1 --> P1
-    S2 --> P1
-    S2 --> P2
-    S3 --> P2
-```
+---
 
 ## Database Schema
 
@@ -157,7 +90,6 @@ erDiagram
         string password
         string first_name
         string last_name
-        string mobile_number
         bool email_verified
         datetime last_login
         bool is_active
@@ -166,8 +98,7 @@ erDiagram
     Role {
         int id PK
         string name UK
-        string permissions
-        bool is_system_role
+        string permissions JSON
         bool is_active
     }
     
@@ -175,9 +106,9 @@ erDiagram
         int user_id FK
         int role_id FK
     }
-    
-    User ||--o{ user_roles : has
-    Role ||--o{ user_roles : assigned_to
+
+    User ||--o{ user_roles : "has"
+    Role ||--o{ user_roles : "assigned to"
 ```
 
 ### Community and Contact Schema
@@ -189,20 +120,20 @@ erDiagram
         string name
         int owner_id FK
         enum privacy_level
-        int total_count
         bool is_active
+        int total_members
     }
-    
+
     Contact {
         int id PK
         int user_id FK
         string contact_name
         string email UK
-        float average_rating
         int verified_count
+        float average_rating
     }
-    
-    ContactEndorsement {
+
+    Endorsement {
         int id PK
         int contact_id FK
         int user_id FK
@@ -210,94 +141,118 @@ erDiagram
         int rating
         bool is_verified
     }
-    
-    Community ||--o{ Contact : contains
-    Contact ||--o{ ContactEndorsement : receives
-    Community ||--o{ ContactEndorsement : contextualizes
+
+    Community ||--o{ Contact : "contains"
+    Contact ||--o{ Endorsement : "receives"
+    Community ||--o{ Endorsement : "contextualizes"
 ```
+
+### Service and Category Schema
+
+```mermaid
+erDiagram
+    Category {
+        int id PK
+        string name UK
+        string slug UK
+        int parent_id FK
+    }
+
+    Service {
+        int id PK
+        int category_id FK
+        string name
+        float base_price
+        string price_unit
+        bool is_active
+    }
+
+    Category ||--o{ Service : "organizes"
+    Service ||--o{ Contact : "provided by"
+```
+
+---
 
 ## Relationships and Constraints
 
 ### Foreign Key Relationships
 
-- All relationships use `ON DELETE CASCADE` where appropriate
-- Soft deletes implemented via `is_active` flags
-- Hierarchical relationships tracked via self-referential foreign keys
+- All relationships use `ON DELETE CASCADE` where logical.
+- Hierarchical relationships (e.g., categories) are tracked with `parent_id`.
 
-### Data Integrity Constraints
+### Unique and Check Constraints
 
-1. Primary Key Constraints
-   - All tables use auto-incrementing integer IDs
-   - Composite keys used for junction tables
+1. **Unique Constraints:**
+    - Emails (`User.email`, `Contact.email`)
+    - Category slugs (`Category.slug` within `parent_id`)
 
-2. Unique Constraints
-   - Email addresses (users, contacts)
-   - Role names
-   - Category slugs within parent
+2. **Check Constraints:**
+    - Rating between 1 and 5 (`Endorsement.rating`)
+    - Non-negative prices (`Service.base_price`)
 
-3. Check Constraints
-   - Rating ranges (1-5)
-   - Valid email formats
-   - Valid phone numbers
-   - Price validations
+---
 
 ## Performance Optimization
 
 ### Current Indices
 
-1. Primary Indices
+- **Primary Indices:** Ensure fast lookups on primary keys.
+- **Composite Indices:** Optimize multi-column queries, e.g., filtering endorsements by `contact_id` and `community_id`.
+- **Partial Indices:** Use for active services and verified contacts.
 
-   ```sql
-   -- Example of primary indices
-   CREATE UNIQUE INDEX idx_users_email ON users(email);
-   CREATE INDEX idx_contacts_user ON contacts(user_id);
-   ```
+### Query Optimization Techniques
 
-2. Composite Indices
+- **Materialized Views:** For aggregations such as average ratings per contact.
+- **Denormalization:** Precomputed counts for members in communities.
+- **Caching:** Store frequently accessed data in a Redis cache.
 
-   ```sql
-   -- Example of composite indices
-   CREATE INDEX idx_category_hierarchy ON categories(parent_id, path, is_active);
-   CREATE INDEX idx_endorsement_context ON contact_endorsements(contact_id, community_id);
-   ```
+---
 
-3. Partial Indices
+## Audit and Security
 
-   ```sql
-   -- Example of partial indices
-   CREATE INDEX idx_active_services ON services(category_id) WHERE is_active = true;
-   ```
+### Security Features
 
-### Query Optimization
+1. **Authentication:**
+    - Password hashing using bcrypt.
+    - Tokens for session management.
 
-- Implemented covering indices for common queries
-- Used materialized views for complex aggregations
-- Optimized category tree traversal
+2. **Data Access Controls:**
+    - Role-based access to API endpoints.
+    - Ownership-based access for modifying data.
+
+3. **Encryption:**
+    - Encrypt sensitive fields like emails in backups.
+
+### Audit Features
+
+1. **Audit Logs:**
+    - Track changes to critical tables (`users`, `roles`, `communities`).
+    - Log actions with `user_id`, `action`, `timestamp`.
+
+2. **Verification Status:**
+    - Status fields in contacts and endorsements.
+    - Maintain verification history.
+
+---
 
 ## Implementation Status
 
 ### Completed Items
 
-- ✅ Base schema implementation
-- ✅ Core relationships
-- ✅ Primary indices
-- ✅ Basic constraints
+- ✅ User and Role management
+- ✅ Core schemas for Communities and Contacts
+- ✅ Initial performance tuning
 
 ### Pending Improvements
 
-1. Critical
-   - Add additional indices for name searching
-   - Implement remaining check constraints
-   - Complete validation rules
+1. **High Priority:**
+    - Add indices for search queries.
+    - Optimize JOIN-heavy queries.
 
-2. Important
-   - Add materialized views for reporting
-   - Implement table partitioning
-   - Add performance monitoring
+2. **Medium Priority:**
+    - Implement analytics dashboards.
+    - Improve audit log querying.
 
-3. Future Considerations
-   - Analytics optimizations
-   - Full-text search integration
-   - Caching strategy implementation
-
-This document reflects the current state of the database design and highlights both implemented features and planned improvements. The system is designed to be extensible while maintaining data integrity and query performance.
+3. **Future Considerations:**
+    - Implement full-text search with PostgreSQL.
+    - Explore table partitioning for large datasets.
