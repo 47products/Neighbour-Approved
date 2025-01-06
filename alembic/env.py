@@ -3,9 +3,10 @@
 from logging.config import fileConfig
 import os
 from pathlib import Path
+import re
 
 from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from dotenv import load_dotenv
 from alembic import context
 
@@ -43,6 +44,19 @@ def get_url():
         raise RuntimeError(f"Database configuration error: {str(e)}") from e
 
 
+def include_object(object, name, type_, reflected, compare_to):
+    """Decide whether to include an object in the migration."""
+    # Skip certain types of indices
+    if type_ == "index":
+        # Skip temporary indices
+        if name.startswith("tmp_"):
+            return False
+        # Skip auto-generated indices
+        if re.match(r"ix_.*_tmp_\d+", name):
+            return False
+    return True
+
+
 def run_migrations_offline() -> None:
     """Execute migrations in 'offline' mode."""
     url = get_url()
@@ -52,6 +66,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -71,8 +86,17 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata, compare_type=True
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            include_object=include_object,
+            include_schemas=True,
+            transaction_per_migration=True,
+            compare_server_default=True,
         )
+
+        # Enable pg_trgm extension if not exists
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
 
         with context.begin_transaction():
             context.run_migrations()

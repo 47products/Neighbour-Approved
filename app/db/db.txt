@@ -195,7 +195,7 @@ class Settings(DatabaseSettings):
             password=self.POSTGRES_PASSWORD.get_secret_value(),
             host=self.POSTGRES_HOST,
             port=self.POSTGRES_PORT,
-            path=f"/{self.POSTGRES_DB}",
+            path=self.POSTGRES_DB,
         )
 
     @field_validator("ENVIRONMENT")
@@ -274,6 +274,7 @@ providing flexibility for different deployment environments.
 from typing import Any, Dict
 from sqlalchemy import create_engine, event, Engine
 from sqlalchemy.engine import URL
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
@@ -406,7 +407,6 @@ def verify_database_connection() -> bool:
         return True
     except Exception as e:
         # Add specific exception handling
-        from sqlalchemy.exc import SQLAlchemyError
 
         if isinstance(e, SQLAlchemyError):
             return False
@@ -567,6 +567,7 @@ class DatabaseSessionManager:
 
 <<< Processing file: ./types.py >>>
 
+# pylint: disable=too-many-ancestors
 """Database type definitions for SQLAlchemy models."""
 
 from datetime import datetime, timezone
@@ -580,6 +581,17 @@ class TZDateTime(TypeDecorator):
 
     impl = DateTime
     cache_ok = True
+
+    def process_literal_param(self, value: Any, dialect: Any) -> Optional[str]:
+        """Process literal parameters for the database."""
+        if value is not None:
+            return f"TIMESTAMP '{value}'"
+        return None
+
+    @property
+    def python_type(self) -> type:
+        """Return the Python type handled by this type decorator."""
+        return datetime
 
     def process_bind_param(
         self, value: Optional[Union[datetime, Any]], dialect: Any
@@ -625,100 +637,86 @@ def create_email_check_constraint(column_name: str) -> CheckConstraint:
 
 <<< Processing file: ./models/service.py >>>
 
-"""
-Service model definition module.
-
-This module defines the Service model which represents specific services that
-contacts can offer within the application. Each service belongs to a category
-and maintains detailed information about the service offering, including
-pricing models and availability status.
-
-The module includes relationships with categories and contacts, ensuring proper
-organization of service offerings while maintaining data integrity through
-cascading operations and proper relationship management.
-"""
+"""Service model definition module."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional
+
 from sqlalchemy import (
     Boolean,
-    Column,
+    Index,
     Integer,
     String,
     ForeignKey,
-    Table,
     Numeric,
-    func,
+    text,
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
 from app.db.database import Base
-from app.db.types import TZDateTime
+from app.db.utils import (
+    COMMENT_LENGTH,
+    SHORT_STRING_LENGTH,
+)
+from app.db.models.mixins import (
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+)
+from app.db.models.associations import contact_services
 
 if TYPE_CHECKING:
     from app.db.models.category import Category
     from app.db.models.contact import Contact
 
-# Association table for Contact and Service
-contact_services = Table(
-    "contact_services",
-    Base.metadata,
-    Column(
-        "contact_id",
-        Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "service_id",
-        Integer,
-        ForeignKey("services.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-)
+
+@dataclass
+class ServiceCreate:
+    """Data transfer object for creating a new Service."""
+
+    name: str
+    category_id: int
+    description: Optional[str] = None
+    base_price: Optional[Decimal] = None
+    price_unit: Optional[str] = None
+    requires_consultation: bool = False
+    is_remote_available: bool = False
+    minimum_hours: Optional[int] = None
+    maximum_hours: Optional[int] = None
 
 
-class Service(Base):
+# pylint: disable=too-many-instance-attributes
+class Service(TimestampMixin, ActiveMixin, NameMixin, Base):
     """
-    Represents a specific service offering in the system.
+    Service model for offerings that contacts can provide.
 
-    Services are specific offerings that contacts can provide. Each service
-    belongs to a category and can be associated with multiple contacts.
-    Services include detailed information about pricing, availability,
-    and specific attributes of the offering.
+    Represents specific services that can be offered by contacts. Each service
+    belongs to a category and includes detailed pricing and availability information.
 
     Attributes:
-        id: Unique identifier for the service
-        name: Service name (unique within category)
-        description: Detailed description of the service
-        category_id: ID of the category this service belongs to
-        base_price: Base price for the service
-        price_unit: Unit of measurement for the price (e.g., 'hour', 'project')
-        is_active: Indicates if the service is currently available
-        created_at: Timestamp of service creation
-        updated_at: Timestamp of last update
-        minimum_hours: Minimum booking duration (if applicable)
-        maximum_hours: Maximum booking duration (if applicable)
-        requires_consultation: Whether initial consultation is required
-        is_remote_available: Whether service can be provided remotely
+        id (int): Unique identifier
+        name (str): Service name
+        description (str, optional): Detailed description
+        category_id (int): ID of category
+        base_price (Decimal, optional): Base price
+        price_unit (str, optional): Unit for price (e.g., 'hour', 'project')
+        minimum_hours (int, optional): Minimum booking duration
+        maximum_hours (int, optional): Maximum booking duration
+        requires_consultation (bool): Whether consultation is required
+        is_remote_available (bool): Whether service can be provided remotely
+        is_active (bool): Whether service is currently available
 
     Relationships:
-        category: Category this service belongs to
-        contacts: Contacts that offer this service
+        category: Service category
+        contacts: Providers offering this service
     """
 
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True,
-    )
-    description: Mapped[Optional[str]] = mapped_column(String(500))
     category_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("categories.id", ondelete="CASCADE"),
@@ -730,22 +728,8 @@ class Service(Base):
         comment="Base price for the service",
     )
     price_unit: Mapped[Optional[str]] = mapped_column(
-        String(20),
+        String(SHORT_STRING_LENGTH),
         comment="Unit of measurement for the price",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
     )
     minimum_hours: Mapped[Optional[int]] = mapped_column(
         Integer,
@@ -766,81 +750,74 @@ class Service(Base):
         nullable=False,
     )
 
+    # Override from NameMixin to specify different length
+    description: Mapped[Optional[str]] = mapped_column(
+        String(COMMENT_LENGTH),
+        doc="Detailed service description",
+    )
+
     # Relationships
-    category: Mapped["Category"] = relationship(
+    category: Mapped[Category] = relationship(
         "Category",
         back_populates="services",
         lazy="joined",
     )
-    contacts: Mapped[List["Contact"]] = relationship(
+    contacts: Mapped[List[Contact]] = relationship(
         "Contact",
         secondary=contact_services,
         back_populates="services",
         lazy="selectin",
+        order_by="Contact.contact_name",
     )
 
-    def __init__(
-        self,
-        name: str,
-        category_id: int,
-        description: Optional[str] = None,
-        base_price: Optional[Decimal] = None,
-        price_unit: Optional[str] = None,
-        **kwargs,
-    ) -> None:
-        """
-        Initialize a new Service instance.
+    __table_args__ = (
+        # Existing constraints remain...
+        # Optimize price-based service searches
+        # This partial index only includes active services
+        Index(
+            "idx_services_price",
+            "category_id",
+            "base_price",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
+        # Optimize availability-based queries
+        Index(
+            "idx_services_availability",
+            "is_remote_available",
+            "requires_consultation",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
+    )
 
-        Args:
-            name: The name of the service
-            category_id: ID of the category this service belongs to
-            description: Optional detailed description of the service
-            base_price: Optional base price for the service
-            price_unit: Optional unit of measurement for the price
-            **kwargs: Additional service attributes
-        """
-        super().__init__(
-            name=name,
-            category_id=category_id,
-            description=description,
-            base_price=base_price,
-            price_unit=price_unit,
-            **kwargs,
-        )
+    @classmethod
+    def create(cls, data: ServiceCreate) -> Service:
+        """Create a new Service from ServiceCreate data."""
+        return cls(**data.__dict__)
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the Service instance.
-
-        Returns:
-            String containing the service's ID and name
-        """
+        """Return string representation."""
         return f"Service(id={self.id}, name={self.name})"
 
     def get_formatted_price(self) -> Optional[str]:
-        """
-        Get a formatted string representation of the service price.
-
-        Returns:
-            Formatted price string or None if price is not set
-        """
+        """Get formatted price string."""
         if self.base_price is None or self.price_unit is None:
             return None
-
         return f"${self.base_price:.2f} per {self.price_unit}"
 
     def calculate_price(self, hours: Optional[int] = None) -> Optional[Decimal]:
         """
-        Calculate the total price for a given duration.
+        Calculate total price for duration.
 
         Args:
-            hours: Number of hours requested (if applicable)
+            hours: Number of hours requested
 
         Returns:
-            Calculated total price or None if pricing cannot be determined
+            Calculated price or None if pricing unavailable
 
         Raises:
-            ValueError: If hours is outside the allowed range
+            ValueError: If hours outside allowed range
         """
         if self.base_price is None:
             return None
@@ -857,15 +834,7 @@ class Service(Base):
         return self.base_price * Decimal(str(hours))
 
     def is_available_for_duration(self, hours: int) -> bool:
-        """
-        Check if the service can be booked for a specific duration.
-
-        Args:
-            hours: Number of hours requested
-
-        Returns:
-            True if the service can be booked for the specified duration
-        """
+        """Check if service can be booked for duration."""
         if not self.is_active:
             return False
 
@@ -879,12 +848,7 @@ class Service(Base):
 
     @property
     def duration_constraints(self) -> Optional[str]:
-        """
-        Get a human-readable description of duration constraints.
-
-        Returns:
-            String describing duration constraints or None if not applicable
-        """
+        """Get human-readable duration constraints."""
         if not (self.minimum_hours or self.maximum_hours):
             return None
 
@@ -899,35 +863,31 @@ class Service(Base):
 
 <<< Processing file: ./models/user.py >>>
 
-"""
-User model definition module.
-
-This module defines the User model and its relationships with other entities in the
-application. The User model serves as the central entity for user management,
-authentication, and authorization.
-
-The module includes association tables for many-to-many relationships with roles
-and communities, as well as comprehensive type hints and relationship definitions
-that ensure type safety and proper cascading behavior.
-"""
+"""User model definition module."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    Table,
-    func,
-)
+
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
 from app.db.database import Base
-from app.db.types import TZDateTime, create_email_check_constraint
+from app.db.models.mixins import TimestampMixin, ActiveMixin
+from app.db.models.associations import (
+    user_roles,
+    user_communities,
+)
+from app.db.utils import (
+    EMAIL_LENGTH,
+    SHORT_STRING_LENGTH,
+    POSTAL_LENGTH,
+    PHONE_LENGTH,
+    create_email_constraint,
+    create_phone_constraint,
+)
 
 if TYPE_CHECKING:
     from app.db.models.contact import Contact
@@ -935,8 +895,399 @@ if TYPE_CHECKING:
     from app.db.models.community import Community
     from app.db.models.contact_endorsement import ContactEndorsement
 
-# Association table for User and Role relationship
-user_role_association = Table(
+
+@dataclass
+class UserCreate:
+    """Data transfer object for creating a new User."""
+
+    email: str
+    password: str
+    first_name: str
+    last_name: str
+    mobile_number: Optional[str] = None
+    postal_address: Optional[str] = None
+    physical_address: Optional[str] = None
+    country: Optional[str] = None
+
+
+class User(TimestampMixin, ActiveMixin, Base):
+    """
+    User model for system authentication and authorization.
+
+    Central entity for user management, containing personal information,
+    authentication details, and relationships with other entities.
+
+    Attributes:
+        id (int): Unique identifier
+        email (str): Email address (unique)
+        password (str): Hashed password
+        first_name (str): First name
+        last_name (str): Last name
+        mobile_number (str, optional): Mobile phone
+        postal_address (str, optional): Mailing address
+        physical_address (str, optional): Physical location
+        country (str, optional): Country of residence
+        email_verified (bool): Whether email is verified
+        last_login (datetime, optional): Last login timestamp
+
+    Relationships:
+        contacts: User's contacts
+        roles: Assigned roles
+        communities: Member communities
+        contact_endorsements: Given endorsements
+        owned_communities: Owned communities
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(
+        String(EMAIL_LENGTH),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    password: Mapped[str] = mapped_column(
+        String(EMAIL_LENGTH),
+        nullable=False,
+    )
+    first_name: Mapped[str] = mapped_column(
+        String(SHORT_STRING_LENGTH),
+        nullable=False,
+    )
+    last_name: Mapped[str] = mapped_column(
+        String(SHORT_STRING_LENGTH),
+        nullable=False,
+    )
+    mobile_number: Mapped[Optional[str]] = mapped_column(
+        String(PHONE_LENGTH),
+    )
+    postal_address: Mapped[Optional[str]] = mapped_column(
+        String(POSTAL_LENGTH),
+    )
+    physical_address: Mapped[Optional[str]] = mapped_column(
+        String(POSTAL_LENGTH),
+    )
+    country: Mapped[Optional[str]] = mapped_column(
+        String(SHORT_STRING_LENGTH),
+    )
+    email_verified: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
+    last_login: Mapped[Optional[datetime]] = mapped_column(
+        nullable=True,
+    )
+
+    # Relationships
+    contacts: Mapped[List[Contact]] = relationship(
+        "Contact",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="Contact.contact_name",
+    )
+    roles: Mapped[List[Role]] = relationship(
+        "Role",
+        secondary=user_roles,
+        back_populates="users",
+        lazy="selectin",
+        order_by="Role.name",
+    )
+    communities: Mapped[List[Community]] = relationship(
+        "Community",
+        secondary=user_communities,
+        back_populates="members",
+        lazy="selectin",
+        order_by="Community.name",
+    )
+    contact_endorsements: Mapped[List[ContactEndorsement]] = relationship(
+        "ContactEndorsement",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="select",
+        order_by="ContactEndorsement.created_at.desc()",
+    )
+    owned_communities: Mapped[List[Community]] = relationship(
+        "Community",
+        primaryjoin="User.id == Community.owner_id",
+        back_populates="owner",
+        lazy="select",
+        order_by="Community.name",
+    )
+
+    __table_args__ = (
+        create_email_constraint("email"),
+        create_phone_constraint("mobile_number"),
+    )
+
+    @classmethod
+    def create(cls, data: UserCreate) -> User:
+        """Create a new User from UserCreate data."""
+        return cls(**data.__dict__)
+
+    def __repr__(self) -> str:
+        """Return string representation."""
+        return f"User(id={self.id}, email={self.email})"
+
+    @property
+    def full_name(self) -> str:
+        """Get user's full name."""
+        return f"{self.first_name} {self.last_name}"
+
+    def record_login(self) -> None:
+        """Record current timestamp as last login."""
+        self.last_login = datetime.now()
+
+    def verify_email(self) -> None:
+        """Mark email as verified."""
+        self.email_verified = True
+
+    def has_permission(self, permission: str) -> bool:
+        """
+        Check if user has specific permission through any role.
+
+        Args:
+            permission: Permission to check
+
+        Returns:
+            bool: Whether user has permission
+        """
+        return any(
+            role.has_permission(permission) for role in self.roles if role.is_active
+        )
+
+    def is_member_of(self, community_id: int) -> bool:
+        """
+        Check if user is member of community.
+
+        Args:
+            community_id: ID of community
+
+        Returns:
+            bool: Whether user is member
+        """
+        return any(c.id == community_id for c in self.communities)
+
+    def owns_community(self, community_id: int) -> bool:
+        """
+        Check if user owns community.
+
+        Args:
+            community_id: ID of community
+
+        Returns:
+            bool: Whether user is owner
+        """
+        return any(c.id == community_id for c in self.owned_communities)
+
+    def has_role(self, role_name: str) -> bool:
+        """
+        Check if user has specific role.
+
+        Args:
+            role_name: Name of role
+
+        Returns:
+            bool: Whether user has role
+        """
+        return any(r.name == role_name for r in self.roles if r.is_active)
+
+
+<<< Processing file: ./models/mixins.py >>>
+
+"""Base mixins for SQLAlchemy models."""
+
+from datetime import datetime
+from typing import Optional, TypeVar
+from sqlalchemy import Boolean, Integer, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+from app.db.types import TZDateTime
+
+T = TypeVar("T")
+
+
+class TimestampMixin:
+    """Mixin for adding timestamp fields to models."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        TZDateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        doc="Timestamp of creation",
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        onupdate=func.now(),
+        doc="Timestamp of last update",
+    )
+
+
+class ActiveMixin:
+    """Mixin for adding active status to models."""
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        doc="Whether the entity is currently active",
+    )
+
+
+class NameMixin:
+    """Mixin for adding standardized name fields to models."""
+
+    name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        doc="Name of the entity",
+    )
+    description: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        doc="Description of the entity",
+    )
+
+
+class SlugMixin:
+    """Mixin for adding slug field to models."""
+
+    slug: Mapped[str] = mapped_column(
+        String(100),
+        unique=True,
+        index=True,
+        nullable=False,
+        doc="URL-friendly version of the name",
+    )
+
+
+class OrderMixin:
+    """Mixin for adding sort order to models."""
+
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        doc="Position in display order",
+    )
+
+
+class VerificationMixin:
+    """Mixin for adding verification status to models."""
+
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        doc="Whether the entity is verified",
+    )
+    verification_date: Mapped[Optional[datetime]] = mapped_column(
+        TZDateTime(timezone=True),
+        doc="When verification occurred",
+    )
+    verification_notes: Mapped[Optional[str]] = mapped_column(
+        String(200),
+        doc="Notes about verification",
+    )
+
+
+class VisibilityMixin:
+    """Mixin for adding public/private visibility to models."""
+
+    is_public: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        doc="Whether the entity is publicly visible",
+    )
+
+
+class CounterMixin:
+    """Mixin for adding common counter fields to models."""
+
+    total_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        doc="Total count of related items",
+    )
+    active_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        doc="Count of active related items",
+    )
+
+
+<<< Processing file: ./models/associations.py >>>
+
+"""Association tables for model relationships."""
+
+from sqlalchemy import Table, Column, Integer, ForeignKey
+from app.db.database import Base
+
+# Contact and Category association
+contact_categories = Table(
+    "contact_categories",
+    Base.metadata,
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+    Column(
+        "category_id",
+        Integer,
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
+
+# Contact and Service association
+contact_services = Table(
+    "contact_services",
+    Base.metadata,
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+    Column(
+        "service_id",
+        Integer,
+        ForeignKey("services.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
+
+# Community and Contact association
+community_contacts = Table(
+    "community_contacts",
+    Base.metadata,
+    Column(
+        "community_id",
+        Integer,
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+    Column(
+        "contact_id",
+        Integer,
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
+
+# User and Role association
+user_roles = Table(
     "user_roles",
     Base.metadata,
     Column(
@@ -944,17 +1295,19 @@ user_role_association = Table(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
     Column(
         "role_id",
         Integer,
         ForeignKey("roles.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
 )
 
-# Association table for User and Community relationship
-user_community_association = Table(
+# User and Community association
+user_communities = Table(
     "user_communities",
     Base.metadata,
     Column(
@@ -962,179 +1315,36 @@ user_community_association = Table(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
     Column(
         "community_id",
         Integer,
         ForeignKey("communities.id", ondelete="CASCADE"),
         primary_key=True,
+        index=True,
     ),
 )
 
-
-class User(Base):
-    """
-    Represents a user in the system.
-
-    The User model is the central entity for user management, containing personal
-    information, authentication details, and relationships with other entities
-    such as roles, communities, and contacts.
-
-    Attributes:
-        id: Unique identifier for the user
-        email: User's email address (unique)
-        password: Hashed password for authentication
-        first_name: User's first name
-        last_name: User's last name
-        mobile_number: User's mobile phone number
-        postal_address: User's postal mailing address
-        physical_address: User's physical location address
-        country: User's country of residence
-        created_at: Timestamp of user creation
-        updated_at: Timestamp of last update
-        is_active: Flag indicating if the user account is active
-        email_verified: Flag indicating if the email has been verified
-        last_login: Timestamp of user's last login
-
-    Relationships:
-        contacts: User's contacts (one-to-many)
-        roles: User's assigned roles (many-to-many)
-        communities: Communities the user belongs to (many-to-many)
-        contact_endorsements: User's contact endorsements (one-to-many)
-        owned_communities: Communities owned by the user (one-to-many)
-    """
-
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(
-        String(255),
-        unique=True,
+# Community relationships (self-referential)
+community_relationships = Table(
+    "community_relationships",
+    Base.metadata,
+    Column(
+        "community_a_id",
+        Integer,
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        primary_key=True,
         index=True,
-        nullable=False,
-    )
-    password: Mapped[str] = mapped_column(String(255), nullable=False)
-    first_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    last_name: Mapped[str] = mapped_column(String(50), nullable=False)
-    mobile_number: Mapped[Optional[str]] = mapped_column(String(20))
-    postal_address: Mapped[Optional[str]] = mapped_column(String(200))
-    physical_address: Mapped[Optional[str]] = mapped_column(String(200))
-    country: Mapped[Optional[str]] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    last_login: Mapped[Optional[datetime]] = mapped_column(TZDateTime(timezone=True))
-
-    # Relationships
-    contacts: Mapped[List["Contact"]] = relationship(
-        "Contact",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="select",
-    )
-    roles: Mapped[List["Role"]] = relationship(
-        "Role",
-        secondary=user_role_association,
-        back_populates="users",
-        lazy="selectin",
-    )
-    communities: Mapped[List["Community"]] = relationship(
-        "Community",
-        secondary=user_community_association,
-        back_populates="members",
-        lazy="selectin",
-    )
-    contact_endorsements: Mapped[List["ContactEndorsement"]] = relationship(
-        "ContactEndorsement",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="select",
-    )
-    owned_communities: Mapped[List["Community"]] = relationship(
-        "Community",
-        foreign_keys="[Community.owner_id]",
-        back_populates="owner",
-        lazy="select",
-    )
-
-    __table_args__ = (create_email_check_constraint("email"),)
-
-    def __init__(
-        self,
-        email: str,
-        password: str,
-        first_name: str,
-        last_name: str,
-        **kwargs,
-    ) -> None:
-        """
-        Initialize a new User instance.
-
-        Args:
-            email: User's email address
-            password: User's hashed password
-            first_name: User's first name
-            last_name: User's last name
-            **kwargs: Additional user attributes
-        """
-        super().__init__(
-            email=email,
-            password=password,
-            first_name=first_name,
-            last_name=last_name,
-            **kwargs,
-        )
-
-    def __repr__(self) -> str:
-        """
-        Return a string representation of the User instance.
-
-        Returns:
-            String containing the user's ID and email
-        """
-        return f"User(id={self.id}, email={self.email})"
-
-    @property
-    def full_name(self) -> str:
-        """
-        Get the user's full name.
-
-        Returns:
-            Concatenated first and last name
-        """
-        return f"{self.first_name} {self.last_name}"
-
-    def is_member_of(self, community_id: int) -> bool:
-        """
-        Check if the user is a member of a specific community.
-
-        Args:
-            community_id: ID of the community to check
-
-        Returns:
-            True if user is a member, False otherwise
-        """
-        return any(c.id == community_id for c in self.communities)
-
-    def has_role(self, role_name: str) -> bool:
-        """
-        Check if the user has a specific role.
-
-        Args:
-            role_name: Name of the role to check
-
-        Returns:
-            True if user has the role, False otherwise
-        """
-        return any(r.name == role_name for r in self.roles)
+    ),
+    Column(
+        "community_b_id",
+        Integer,
+        ForeignKey("communities.id", ondelete="CASCADE"),
+        primary_key=True,
+        index=True,
+    ),
+)
 
 
 <<< Processing file: ./models/__init__.py >>>
@@ -1227,138 +1437,122 @@ def get_model_class(model_name: str) -> type:
 
 <<< Processing file: ./models/role.py >>>
 
-"""
-Role model definition module.
-
-This module defines the Role model which manages user permissions and access control
-within the application. The Role model supports both system-defined and custom roles,
-each with configurable permissions and descriptions.
-
-The module includes type-safe relationship definitions and proper handling of
-timezone-aware timestamps, ensuring consistent behavior across the application.
-"""
+"""Role model definition module."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 import json
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import Boolean, String, func
+
+from sqlalchemy import String
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
 from app.db.database import Base
-from app.db.types import TZDateTime
+from app.db.models.mixins import (
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+)
+from app.db.models.associations import user_roles
+from app.db.utils import (
+    SHORT_STRING_LENGTH,
+    COMMENT_LENGTH,
+    create_check_constraint,
+)
 
 if TYPE_CHECKING:
     from app.db.models.user import User
 
 
-class Role(Base):
-    """
-    Represents a role in the system.
+@dataclass
+class RoleCreate:
+    """Data transfer object for creating a new Role."""
 
-    A role defines a set of permissions and access levels that can be assigned to users.
-    Roles can be either system-defined (managed by the application) or custom-created.
-    Each role maintains its creation and update timestamps, along with an active status.
+    name: str
+    description: Optional[str] = None
+    permissions: Optional[str] = None
+    is_system_role: bool = False
+
+
+class Role(TimestampMixin, ActiveMixin, NameMixin, Base):
+    """
+    Role model for user permissions.
+
+    Defines sets of permissions and access levels that can be assigned to users.
+    Supports both system-defined and custom roles.
 
     Attributes:
-        id: Unique identifier for the role
-        name: Role name (unique across the system)
-        description: Detailed description of the role's purpose
-        permissions: JSON string containing role permissions
-        created_at: Timestamp of role creation
-        updated_at: Timestamp of last update
-        is_system_role: Indicates if this is a system-managed role
-        is_active: Indicates if the role is currently active
+        id (int): Unique identifier
+        name (str): Role name (unique)
+        description (str, optional): Role description
+        permissions (str, optional): JSON string of permissions
+        is_system_role (bool): Whether this is a system-managed role
+        is_active (bool): Whether role is currently active
 
     Relationships:
-        users: Users assigned to this role (many-to-many)
+        users: Users assigned this role
     """
 
     __tablename__ = "roles"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(
-        String(50),
+        String(SHORT_STRING_LENGTH),
         unique=True,
-        nullable=False,
         index=True,
+        nullable=False,
     )
-    description: Mapped[Optional[str]] = mapped_column(String(200))
     permissions: Mapped[Optional[str]] = mapped_column(
-        String(500),
+        String(COMMENT_LENGTH),
         doc="JSON string containing role permissions",
     )
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
     is_system_role: Mapped[bool] = mapped_column(
-        Boolean,
         default=False,
         nullable=False,
         doc="Indicates if this is a system-managed role",
     )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
+
+    # Override from NameMixin for different length
+    description: Mapped[Optional[str]] = mapped_column(
+        String(COMMENT_LENGTH),
+        doc="Detailed role description",
     )
 
     # Relationships
-    users: Mapped[List["User"]] = relationship(
+    users: Mapped[List[User]] = relationship(
         "User",
-        secondary="user_roles",
+        secondary=user_roles,
         back_populates="roles",
         lazy="selectin",
+        order_by="User.last_name",
     )
 
-    def __init__(
-        self,
-        name: str,
-        description: Optional[str] = None,
-        permissions: Optional[str] = None,
-        is_system_role: bool = False,
-    ) -> None:
-        """
-        Initialize a new Role instance.
+    __table_args__ = (
+        create_check_constraint(
+            "permissions IS NULL OR json_typeof(permissions::json) = 'array'",
+            name="valid_permissions_json",
+        ),
+    )
 
-        Args:
-            name: The name of the role
-            description: Optional description of the role's purpose
-            permissions: Optional JSON string of role permissions
-            is_system_role: Whether this is a system-managed role
-        """
-        super().__init__(
-            name=name,
-            description=description,
-            permissions=permissions,
-            is_system_role=is_system_role,
-        )
+    @classmethod
+    def create(cls, data: RoleCreate) -> Role:
+        """Create a new Role from RoleCreate data."""
+        return cls(**data.__dict__)
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the Role instance.
-
-        Returns:
-            String containing the role's ID and name
-        """
+        """Return string representation."""
         return f"Role(id={self.id}, name={self.name})"
 
     def has_permission(self, permission: str) -> bool:
         """
-        Check if the role has a specific permission.
+        Check if role has specific permission.
 
         Args:
-            permission: The permission to check for
+            permission: Permission to check
 
         Returns:
-            True if the role has the permission, False otherwise
+            bool: Whether role has permission
         """
         if not self.permissions or not self.is_active:
             return False
@@ -1371,12 +1565,11 @@ class Role(Base):
 
     def grant_permission(self, permission: str) -> None:
         """
-        Grant a new permission to the role.
+        Grant new permission to role.
 
         Args:
-            permission: The permission to grant
+            permission: Permission to grant
         """
-
         try:
             permissions = json.loads(self.permissions) if self.permissions else []
         except (json.JSONDecodeError, TypeError):
@@ -1388,12 +1581,11 @@ class Role(Base):
 
     def revoke_permission(self, permission: str) -> None:
         """
-        Revoke a permission from the role.
+        Revoke permission from role.
 
         Args:
-            permission: The permission to revoke
+            permission: Permission to revoke
         """
-
         try:
             permissions = json.loads(self.permissions) if self.permissions else []
         except (json.JSONDecodeError, TypeError):
@@ -1403,33 +1595,44 @@ class Role(Base):
             permissions.remove(permission)
             self.permissions = json.dumps(permissions)
 
+    def list_permissions(self) -> List[str]:
+        """
+        Get list of all granted permissions.
+
+        Returns:
+            list: Current permissions
+        """
+        try:
+            return json.loads(self.permissions) if self.permissions else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
 
 <<< Processing file: ./models/community.py >>>
 
-"""
-Community model definition module.
-"""
+"""Community model definition module."""
 
 from __future__ import annotations
 
-from datetime import datetime
 import enum
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    Table,
-    UniqueConstraint,
-    func,
-    Enum as SQLAlchemyEnum,
-)
+from dataclasses import dataclass
+
+from sqlalchemy import ForeignKey, Integer, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
 from app.db.database import Base
-from app.db.types import TZDateTime
+from app.db.models.mixins import (
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+    CounterMixin,
+)
+from app.db.models.associations import (
+    community_contacts,
+    community_relationships,
+    user_communities,
+)
 
 if TYPE_CHECKING:
     from app.db.models.user import User
@@ -1439,191 +1642,221 @@ if TYPE_CHECKING:
 
 class PrivacyLevel(str, enum.Enum):
     """Enumeration for community privacy levels."""
+
     PUBLIC = "public"
     PRIVATE = "private"
     INVITATION_ONLY = "invitation_only"
 
 
-COMMUNITIES_ID = "communities.id"
+@dataclass
+class CommunityCreate:
+    """Data transfer object for creating a new Community."""
 
-# Association table for users and communities
-user_communities = Table(
-    "user_communities",
-    Base.metadata,
-    Column(
-        "user_id",
-        Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "community_id",
-        Integer,
-        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    UniqueConstraint("user_id", "community_id", name="uq_user_community"),
-)
-
-community_relationships = Table(
-    "community_relationships",
-    Base.metadata,
-    Column(
-        "community_a_id",
-        Integer,
-        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "community_b_id",
-        Integer,
-        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
-        primary_key=True,
-    ),
-)
-
-community_contacts = Table(
-    "community_contacts",
-    Base.metadata,
-    Column(
-        "community_id",
-        Integer,
-        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "contact_id",
-        Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-)
+    name: str
+    owner_id: int
+    description: Optional[str] = None
+    privacy_level: PrivacyLevel = PrivacyLevel.PUBLIC
 
 
-class Community(Base):
-    """Represents a community group in the system."""
+class Community(
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+    CounterMixin,
+    Base,
+):
+    """
+    Community model for organizing users and contacts.
+
+    Communities serve as organizational units that connect users and their contacts,
+    enabling shared resources and collaborative endorsements.
+
+    Attributes:
+        id (int): Unique identifier
+        name (str): Community name
+        description (str, optional): Community description
+        owner_id (int): ID of community owner
+        privacy_level (PrivacyLevel): Access control level
+        total_count (int): Total member count
+        active_count (int): Active member count
+        is_active (bool): Whether community is active
+
+    Relationships:
+        owner: User who owns the community
+        members: Users who belong to community
+        contacts: Contacts in the community
+        related_communities: Connected communities
+        contact_endorsements: Endorsements within community
+    """
 
     __tablename__ = "communities"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
-    description: Mapped[Optional[str]] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
     owner_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
+        index=True,
+        doc="ID of community owner",
     )
     privacy_level: Mapped[PrivacyLevel] = mapped_column(
         SQLAlchemyEnum(PrivacyLevel, name="privacy_level_enum"),
         default=PrivacyLevel.PUBLIC,
         nullable=False,
-    )
-    member_count: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False,
-    )
-    contact_count: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False,
+        doc="Access control level",
     )
 
     # Relationships
-    owner: Mapped["User"] = relationship(
+    owner: Mapped[User] = relationship(
         "User",
         foreign_keys=[owner_id],
         back_populates="owned_communities",
         lazy="joined",
     )
-    members: Mapped[List["User"]] = relationship(
+    members: Mapped[List[User]] = relationship(
         "User",
         secondary=user_communities,
         back_populates="communities",
         lazy="selectin",
+        order_by="User.last_name",
     )
-    contacts: Mapped[List["Contact"]] = relationship(
+    contacts: Mapped[List[Contact]] = relationship(
         "Contact",
         secondary=community_contacts,
         back_populates="communities",
         lazy="selectin",
+        order_by="Contact.contact_name",
     )
-    related_communities: Mapped[List["Community"]] = relationship(
+    related_communities: Mapped[List[Community]] = relationship(
         "Community",
         secondary=community_relationships,
         primaryjoin=id == community_relationships.c.community_a_id,
         secondaryjoin=id == community_relationships.c.community_b_id,
         back_populates="related_to_communities",
         lazy="selectin",
+        order_by="Community.name",
     )
-    related_to_communities: Mapped[List["Community"]] = relationship(
+    related_to_communities: Mapped[List[Community]] = relationship(
         "Community",
         secondary=community_relationships,
         primaryjoin=id == community_relationships.c.community_b_id,
         secondaryjoin=id == community_relationships.c.community_a_id,
         back_populates="related_communities",
         lazy="selectin",
+        order_by="Community.name",
     )
-    contact_endorsements: Mapped[List["ContactEndorsement"]] = relationship(
+    contact_endorsements: Mapped[List[ContactEndorsement]] = relationship(
         "ContactEndorsement",
         back_populates="community",
         cascade="all, delete-orphan",
         lazy="select",
     )
 
+    @classmethod
+    def create(cls, data: CommunityCreate) -> Community:
+        """Create a new Community instance from CommunityCreate data."""
+        return cls(**data.__dict__)
+
+    def __repr__(self) -> str:
+        """Return string representation."""
+        return f"Community(id={self.id}, name={self.name})"
+
+    def add_member(self, user: User) -> None:
+        """
+        Add a user as a member.
+
+        Args:
+            user: User to add
+
+        Raises:
+            ValueError: If user is already a member
+        """
+        if user in self.members:
+            raise ValueError(f"User {user.id} is already a member")
+        self.members.append(user)
+        self.total_count += 1
+        if user.is_active:
+            self.active_count += 1
+
+    def remove_member(self, user: User) -> None:
+        """
+        Remove a user from membership.
+
+        Args:
+            user: User to remove
+
+        Raises:
+            ValueError: If user is not a member
+        """
+        if user not in self.members:
+            raise ValueError(f"User {user.id} is not a member")
+        self.members.remove(user)
+        self.total_count -= 1
+        if user.is_active:
+            self.active_count -= 1
+
+    def add_related_community(self, community: Community) -> None:
+        """
+        Establish relationship with another community.
+
+        Args:
+            community: Community to relate to
+
+        Raises:
+            ValueError: If already related
+        """
+        if community in self.related_communities:
+            raise ValueError(f"Already related to community {community.id}")
+        self.related_communities.append(community)
+
+    def can_user_access(self, user: Optional[User]) -> bool:
+        """
+        Check if a user can access this community.
+
+        Args:
+            user: User to check access for
+
+        Returns:
+            bool: Whether user has access
+        """
+        if self.privacy_level == PrivacyLevel.PUBLIC:
+            return True
+        if not user:
+            return False
+        if user.id == self.owner_id:
+            return True
+        return user in self.members
+
 
 <<< Processing file: ./models/contact_endorsement.py >>>
 
-"""
-Contact Endorsement model definition module.
-
-This module defines the ContactEndorsement model which manages endorsements and
-ratings for contacts within communities. The model tracks user endorsements,
-maintains rating information, and handles endorsement verification to build
-trust within the community network.
-
-The module implements comprehensive validation rules and maintains data integrity
-through proper relationship management and constraint handling. It includes
-detailed type hints and documentation to ensure proper usage throughout the
-application.
-"""
+"""Contact Endorsement model definition module."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 from sqlalchemy import (
     Boolean,
+    Index,
     Integer,
     String,
     ForeignKey,
-    CheckConstraint,
-    UniqueConstraint,
-    func,
+    text,
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
 from app.db.database import Base
-from app.db.types import TZDateTime
+from app.db.models.mixins import (
+    TimestampMixin,
+    VerificationMixin,
+    VisibilityMixin,
+)
+from app.db.utils import (
+    COMMENT_LENGTH,
+    create_check_constraint,
+    create_unique_constraint,
+)
 
 if TYPE_CHECKING:
     from app.db.models.user import User
@@ -1631,33 +1864,47 @@ if TYPE_CHECKING:
     from app.db.models.contact import Contact
 
 
-class ContactEndorsement(Base):
-    """
-    Represents an endorsement of a contact within a community.
+@dataclass
+class EndorsementCreate:
+    """Data transfer object for creating a new ContactEndorsement."""
 
-    ContactEndorsements track user recommendations and ratings for contacts
-    within specific communities. Each endorsement can include a rating and
-    detailed comment, and may be verified to increase trust in the system.
-    The model maintains proper timestamps and verification status.
+    contact_id: int
+    user_id: int
+    community_id: int
+    endorsed: bool = True
+    rating: Optional[int] = None
+    comment: Optional[str] = None
+    is_public: bool = True
+
+
+class ContactEndorsement(
+    TimestampMixin,
+    VerificationMixin,
+    VisibilityMixin,
+    Base,
+):
+    """
+    Model for contact endorsements within communities.
+
+    Represents recommendations and ratings that users provide for contacts within
+    specific communities. Includes verification status and visibility controls.
 
     Attributes:
-        id: Unique identifier for the endorsement
-        contact_id: ID of the endorsed contact
-        user_id: ID of the endorsing user
-        community_id: ID of the community context
-        endorsed: Whether the endorsement is positive
-        rating: Optional numerical rating (1-5)
-        comment: Optional detailed endorsement text
-        created_at: Timestamp of endorsement creation
-        updated_at: Timestamp of last update
-        is_verified: Whether the endorsement is verified
-        verification_date: When the endorsement was verified
-        verification_notes: Optional notes about verification
-        is_public: Whether the endorsement is publicly visible
+        id (int): Unique identifier
+        contact_id (int): ID of endorsed contact
+        user_id (int): ID of endorsing user
+        community_id (int): ID of community context
+        endorsed (bool): Whether endorsement is positive
+        rating (int, optional): Numerical rating (1-5)
+        comment (str, optional): Detailed endorsement text
+        is_verified (bool): Whether endorsement is verified
+        verification_date (datetime): When endorsement was verified
+        verification_notes (str, optional): Notes about verification
+        is_public (bool): Whether endorsement is publicly visible
 
     Relationships:
-        user: User who provided the endorsement
-        community: Community context of the endorsement
+        user: User who provided endorsement
+        community: Community context
         contact: Contact being endorsed
     """
 
@@ -1690,133 +1937,71 @@ class ContactEndorsement(Base):
     )
     rating: Mapped[Optional[int]] = mapped_column(
         Integer,
-        CheckConstraint("rating >= 1 AND rating <= 5"),
         doc="Optional rating from 1 to 5",
     )
     comment: Mapped[Optional[str]] = mapped_column(
-        String(500),
+        String(COMMENT_LENGTH),
         doc="Optional detailed endorsement comment",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
-    is_verified: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False,
-        doc="Indicates if the endorsement is verified",
-    )
-    verification_date: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        doc="When the endorsement was verified",
-    )
-    verification_notes: Mapped[Optional[str]] = mapped_column(
-        String(200),
-        doc="Optional notes about verification process",
-    )
-    is_public: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-        doc="Whether the endorsement is publicly visible",
     )
 
     # Relationships
-    user: Mapped["User"] = relationship(
+    user: Mapped[User] = relationship(
         "User",
         back_populates="contact_endorsements",
         lazy="joined",
     )
-    community: Mapped["Community"] = relationship(
+    community: Mapped[Community] = relationship(
         "Community",
         back_populates="contact_endorsements",
         lazy="joined",
     )
-    contact: Mapped["Contact"] = relationship(
+    contact: Mapped[Contact] = relationship(
         "Contact",
         back_populates="endorsements",
         lazy="joined",
     )
 
     __table_args__ = (
-        # Ensure unique endorsement per user per contact per community
-        UniqueConstraint(
+        create_unique_constraint(
             "user_id",
             "contact_id",
             "community_id",
             name="uq_user_contact_community_endorsement",
         ),
-        # Rating range check
-        CheckConstraint(
-            "rating IS NULL OR (rating >= 1 AND rating <= 5)", name="valid_rating_range"
+        create_check_constraint(
+            "rating IS NULL OR (rating >= 1 AND rating <= 5)",
+            name="valid_rating_range",
+        ),
+        # Optimize verified endorsement queries
+        Index(
+            "idx_contact_endorsements_verified",
+            "contact_id",
+            "is_verified",
+            "rating",
+            postgresql_where=text("is_verified = true"),
+        ),
+        # Optimize community-based endorsement queries with included columns
+        # The INCLUDE clause adds columns to the index leaf nodes without making them part of the key
+        Index(
+            "idx_contact_endorsements_community",
+            "community_id",
+            "created_at",
+            postgresql_include=["rating", "is_verified"],
         ),
     )
 
-    def __init__(
-        self,
-        contact_id: int,
-        user_id: int,
-        community_id: int,
-        endorsed: bool = True,
-        rating: Optional[int] = None,
-        comment: Optional[str] = None,
-        is_public: bool = True,
-    ) -> None:
-        """
-        Initialize a new ContactEndorsement instance.
-
-        Args:
-            contact_id: ID of the contact being endorsed
-            user_id: ID of the endorsing user
-            community_id: ID of the community context
-            endorsed: Whether this is a positive endorsement
-            rating: Optional rating from 1 to 5
-            comment: Optional detailed comment
-            is_public: Whether the endorsement should be public
-        """
-        super().__init__(
-            contact_id=contact_id,
-            user_id=user_id,
-            community_id=community_id,
-            endorsed=endorsed,
-            rating=rating,
-            comment=comment,
-            is_public=is_public,
-        )
+    @classmethod
+    def create(cls, data: EndorsementCreate) -> ContactEndorsement:
+        """Create a new ContactEndorsement from EndorsementCreate data."""
+        return cls(**data.__dict__)
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the ContactEndorsement instance.
-
-        Returns:
-            String containing the endorsement's key information
-        """
+        """Return string representation."""
         return (
             f"ContactEndorsement(id={self.id}, "
             f"contact_id={self.contact_id}, "
             f"user_id={self.user_id})"
         )
-
-    def verify(
-        self,
-        verification_notes: Optional[str] = None,
-    ) -> None:
-        """
-        Mark the endorsement as verified with optional notes.
-
-        Args:
-            verification_notes: Optional notes about the verification process
-        """
-        self.is_verified = True
-        self.verification_date = datetime.now()
-        if verification_notes:
-            self.verification_notes = verification_notes
 
     def update_rating(
         self,
@@ -1824,14 +2009,14 @@ class ContactEndorsement(Base):
         comment: Optional[str] = None,
     ) -> None:
         """
-        Update the endorsement's rating and optionally the comment.
+        Update rating and optionally comment.
 
         Args:
             new_rating: New rating value (1-5) or None
             comment: Optional new comment text
 
         Raises:
-            ValueError: If the rating is not between 1 and 5
+            ValueError: If rating is invalid
         """
         if new_rating is not None and not 1 <= new_rating <= 5:
             raise ValueError("Rating must be between 1 and 5")
@@ -1840,20 +2025,9 @@ class ContactEndorsement(Base):
         if comment is not None:
             self.comment = comment
 
-    def toggle_visibility(self) -> None:
-        """
-        Toggle the public visibility of the endorsement.
-        """
-        self.is_public = not self.is_public
-
     @property
     def verification_status(self) -> str:
-        """
-        Get a human-readable verification status.
-
-        Returns:
-            String describing the current verification status
-        """
+        """Get human-readable verification status."""
         if not self.is_verified:
             return "Unverified"
         if self.verification_notes:
@@ -1862,12 +2036,7 @@ class ContactEndorsement(Base):
 
     @property
     def formatted_rating(self) -> Optional[str]:
-        """
-        Get a formatted display of the rating.
-
-        Returns:
-            Formatted rating string or None if no rating
-        """
+        """Get formatted display of rating."""
         if self.rating is None:
             return None
         return f"{self.rating}/5 stars"
@@ -1875,210 +2044,186 @@ class ContactEndorsement(Base):
 
 <<< Processing file: ./models/category.py >>>
 
-"""
-Category model definition module.
+"""Category model definition module.
 
-This module defines the Category model which provides a hierarchical organization
-system for classifying contacts and services within the application. Categories
-can be nested to create a taxonomy that enables efficient organization and
-discovery of resources.
-
-The module includes relationships with contacts and services, along with 
-self-referential relationships for managing category hierarchies. It supports
-proper handling of timezone-aware timestamps and maintains data integrity
-through cascading operations.
+This module implements the Category model, which provides a hierarchical classification
+system for organizing services and contacts. It includes optimized database indices
+for efficient tree traversal and hierarchical queries.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import (
-    Boolean,
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    Table,
-    func,
-)
-from sqlalchemy.orm import Mapped, relationship, mapped_column
+
+from sqlalchemy import Index, Integer, String, ForeignKey, text
+from sqlalchemy.orm import Mapped, relationship, mapped_column, declared_attr
 
 from app.db.database import Base
-from app.db.types import TZDateTime
+from app.db.models.associations import contact_categories
+from app.db.models.mixins import (
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+    SlugMixin,
+    OrderMixin,
+)
+from app.db.utils import DEFAULT_STRING_LENGTH
 
 if TYPE_CHECKING:
     from app.db.models.contact import Contact
     from app.db.models.service import Service
 
-# Association table for Contact and Category
-contact_categories = Table(
-    "contact_categories",
-    Base.metadata,
-    Column(
-        "contact_id",
-        Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-    Column(
-        "category_id",
-        Integer,
-        ForeignKey("categories.id", ondelete="CASCADE"),
-        primary_key=True,
-    ),
-)
+
+@dataclass
+class CategoryCreate:
+    """Data transfer object for creating a new Category."""
+
+    name: str
+    slug: str
+    description: Optional[str] = None
+    parent: Optional[Category] = None
+    sort_order: int = 0
 
 
-class Category(Base):
+class Category(
+    TimestampMixin,
+    ActiveMixin,
+    NameMixin,
+    SlugMixin,
+    OrderMixin,
+    Base,
+):
     """
-    Represents a category in the system's classification hierarchy.
+    Category model for hierarchical classification.
 
     Categories form a hierarchical structure for organizing contacts and services.
     Each category can have multiple child categories and belongs to a single
-    parent category. This enables the creation of detailed taxonomies for
-    precise classification of system resources.
+    parent category, enabling detailed taxonomies for resource classification.
 
     Attributes:
-        id: Unique identifier for the category
-        name: Category name (unique within its level)
-        description: Detailed description of the category's purpose
-        slug: URL-friendly version of the name
-        parent_id: ID of the parent category (None for root categories)
-        is_active: Indicates if the category is currently active
-        sort_order: Position in the display order
-        created_at: Timestamp of category creation
-        updated_at: Timestamp of last update
-        depth: Level in the category hierarchy (0 for root)
-        path: Full path from root to this category
-
-    Relationships:
-        parent: Parent category (if any)
-        children: Child categories
-        contacts: Contacts assigned to this category
-        services: Services belonging to this category
+        id (int): Unique identifier
+        name (str): Category name (unique)
+        description (str, optional): Detailed category description
+        slug (str): URL-friendly version of the name
+        parent_id (int, optional): ID of parent category
+        is_active (bool): Whether category is active
+        sort_order (int): Display order position
+        depth (int): Level in hierarchy (0 for root)
+        path (str): Full path from root to this category
     """
 
     __tablename__ = "categories"
 
+    # Primary Key
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
-    description: Mapped[Optional[str]] = mapped_column(String(255))
-    slug: Mapped[str] = mapped_column(
-        String(100),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
+
+    # Foreign Keys and Regular Columns
     parent_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("categories.id", ondelete="CASCADE"),
         index=True,
     )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-    )
-    sort_order: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
     depth: Mapped[int] = mapped_column(
         Integer,
         default=0,
         nullable=False,
+        doc="Level in hierarchy (0 for root)",
     )
     path: Mapped[str] = mapped_column(
-        String(255),
+        String(DEFAULT_STRING_LENGTH),
         nullable=False,
+        doc="Full path from root to this category",
     )
 
     # Relationships
-    parent: Mapped[Optional["Category"]] = relationship(
+    parent: Mapped[Optional[Category]] = relationship(
         "Category",
         back_populates="children",
         remote_side=[id],
         lazy="joined",
     )
-    children: Mapped[List["Category"]] = relationship(
+    children: Mapped[List[Category]] = relationship(
         "Category",
         back_populates="parent",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="Category.sort_order",
     )
-    contacts: Mapped[List["Contact"]] = relationship(
+    contacts: Mapped[List[Contact]] = relationship(
         "Contact",
         secondary=contact_categories,
         back_populates="categories",
         lazy="selectin",
     )
-    services: Mapped[List["Service"]] = relationship(
+    services: Mapped[List[Service]] = relationship(
         "Service",
         back_populates="category",
         cascade="all, delete-orphan",
         lazy="selectin",
+        order_by="Service.name",
     )
 
-    def __init__(
-        self,
-        name: str,
-        slug: str,
-        *,  # Force keyword arguments
-        description: Optional[str] = None,
-        parent: Optional[Category] = None,
-        sort_order: int = 0,
-    ) -> None:
-        """
-        Initialize a new Category instance.
+    @declared_attr
+    def __table_args__(cls) -> tuple:
+        """Define table arguments including indices.
 
-        Args:
-            name: The name of the category
-            slug: URL-friendly version of the name
-            description: Optional description of the category's purpose
-            parent: Optional parent category
-            sort_order: Display order position (default is 0)
+        Using declared_attr ensures proper column reference resolution
+        and fixes linting issues.
         """
-        super().__init__(
-            name=name,
-            slug=slug,
-            description=description,
-            parent=parent,
-            sort_order=sort_order,
+        return (
+            # Optimize tree traversal queries
+            Index(
+                "uq_category_parent_slug",
+                cls.parent_id,
+                cls.slug,
+                unique=True,
+                postgresql_where=text("is_active = true"),
+            ),
+            # Improve hierarchical path lookups
+            Index(
+                "idx_categories_hierarchy",
+                cls.path,
+                cls.is_active,
+                postgresql_using="btree",
+            ),
+            # Optimize level-based category queries
+            Index(
+                "idx_categories_depth",
+                cls.depth,
+                cls.is_active,
+                postgresql_using="btree",
+            ),
+            # Improve sibling ordering queries
+            Index(
+                "idx_categories_ordering",
+                cls.parent_id,
+                cls.sort_order,
+                cls.is_active,
+                postgresql_using="btree",
+            ),
+            # Optimize path-based lookups
+            Index(
+                "idx_categories_path_search",
+                cls.path,
+                postgresql_using="btree",
+                postgresql_where=text("is_active = true"),
+            ),
         )
-        self._update_hierarchy_info()
+
+    @classmethod
+    def create(cls, data: CategoryCreate) -> Category:
+        """Create a new Category instance from CategoryCreate data."""
+        instance = cls(**data.__dict__)
+        instance.update_hierarchy_info()
+        return instance
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the Category instance.
-
-        Returns:
-            String containing the category's ID and name
-        """
+        """Return string representation."""
         return f"Category(id={self.id}, name={self.name})"
 
-    def _update_hierarchy_info(self) -> None:
-        """
-        Update the category's hierarchy information.
-
-        This internal method updates the depth and path attributes based
-        on the category's position in the hierarchy.
-        """
+    def update_hierarchy_info(self) -> None:
+        """Update hierarchy information (depth and path)."""
         if self.parent:
             self.depth = self.parent.depth + 1
             self.path = f"{self.parent.path}/{self.slug}"
@@ -2087,12 +2232,7 @@ class Category(Base):
             self.path = self.slug
 
     def get_ancestors(self) -> List[Category]:
-        """
-        Get all ancestor categories in order from root to parent.
-
-        Returns:
-            List of ancestor categories
-        """
+        """Get all ancestor categories in order from root to parent."""
         ancestors = []
         current = self.parent
         while current:
@@ -2101,12 +2241,7 @@ class Category(Base):
         return ancestors
 
     def get_descendants(self) -> List[Category]:
-        """
-        Get all descendant categories in depth-first order.
-
-        Returns:
-            List of descendant categories
-        """
+        """Get all descendant categories in depth-first order."""
         descendants = []
         for child in self.children:
             descendants.append(child)
@@ -2114,82 +2249,140 @@ class Category(Base):
         return descendants
 
     def is_ancestor_of(self, category: Category) -> bool:
-        """
-        Check if this category is an ancestor of another category.
-
-        Args:
-            category: The category to check
-
-        Returns:
-            True if this category is an ancestor of the given category
-        """
+        """Check if this category is an ancestor of another category."""
         return self.path in category.path.split("/")
 
     def is_descendant_of(self, category: Category) -> bool:
-        """
-        Check if this category is a descendant of another category.
-
-        Args:
-            category: The category to check
-
-        Returns:
-            True if this category is a descendant of the given category
-        """
+        """Check if this category is a descendant of another category."""
         return category.path in self.path.split("/")
 
     def move_to_parent(self, new_parent: Optional[Category]) -> None:
-        """
-        Move this category to a new parent category.
-
-        Args:
-            new_parent: The new parent category (None for root level)
-
-        Raises:
-            ValueError: If the move would create a circular reference
-        """
+        """Move this category to a new parent."""
         if new_parent and (self == new_parent or new_parent.is_descendant_of(self)):
             raise ValueError("Cannot move category to one of its descendants")
 
         self.parent = new_parent
-        self._update_hierarchy_info()
+        self.update_hierarchy_info()
 
         for descendant in self.get_descendants():
-            descendant._update_hierarchy_info()
+            descendant.update_hierarchy_info()
+
+    def get_siblings(self) -> List[Category]:
+        """Get all categories that share the same parent."""
+        if self.parent:
+            return [child for child in self.parent.children if child != self]
+        return []
+
+    def get_root(self) -> Category:
+        """Get the root category for this branch of the hierarchy."""
+        current = self
+        while current.parent:
+            current = current.parent
+        return current
+
+    def get_full_path_names(self) -> List[str]:
+        """Get the full path of category names from root to this category."""
+        path_names = []
+        current = self
+        while current:
+            path_names.insert(0, current.name)
+            current = current.parent
+        return path_names
+
+    def is_leaf(self) -> bool:
+        """Check if this category is a leaf node (has no children)."""
+        return len(self.children) == 0
+
+    def is_empty(self) -> bool:
+        """Check if this category has any associated contacts or services."""
+        return len(self.contacts) == 0 and len(self.services) == 0
+
+    def get_active_services_count(self) -> int:
+        """Get count of active services in this category."""
+        return sum(1 for service in self.services if service.is_active)
+
+    def get_sorted_children(self, *, active_only: bool = False) -> List[Category]:
+        """Get children categories in proper sort order."""
+        children = self.children
+        if active_only:
+            children = [child for child in children if child.is_active]
+        return sorted(children, key=lambda x: x.sort_order)
+
+    def validate_hierarchy(self) -> bool:
+        """Validate the correctness of the category hierarchy."""
+        calculated_depth = self.get_hierarchy_level()
+        if calculated_depth != self.depth:
+            raise ValueError(
+                f"Depth mismatch: stored={self.depth}, "
+                f"calculated={calculated_depth}"
+            )
+
+        calculated_path = "/".join(
+            ancestor.slug for ancestor in self.get_ancestors() + [self]
+        )
+        if calculated_path != self.path:
+            raise ValueError(
+                f"Path mismatch: stored={self.path}, " f"calculated={calculated_path}"
+            )
+
+        visited = set()
+        current = self
+        while current:
+            if current.id in visited:
+                raise ValueError("Circular reference detected in category hierarchy")
+            visited.add(current.id)
+            current = current.parent
+
+        return True
+
+    def get_hierarchy_level(self) -> int:
+        """Get the absolute level in the full category hierarchy."""
+        level = 0
+        current = self.parent
+        while current:
+            level += 1
+            current = current.parent
+        return level
+
+    def reorder_children(self, new_order: List[int]) -> None:
+        """Reorder child categories based on provided order."""
+        if set(new_order) != set(child.id for child in self.children):
+            raise ValueError("New order must contain exactly the current child IDs")
+
+        order_map = {id_: i for i, id_ in enumerate(new_order)}
+
+        for child in self.children:
+            child.sort_order = order_map[child.id]
 
 
 <<< Processing file: ./models/contact.py >>>
 
-"""
-Contact model definition module.
-
-This module defines the Contact model which serves as the central entity for
-managing service provider information within the application. The Contact model
-maintains detailed information about service providers, their relationships with
-communities, and the endorsements they receive.
-
-The module implements proper data validation, relationship management, and
-maintains data integrity through cascading operations and proper constraint
-handling. It includes comprehensive type hints and documentation to ensure
-proper usage throughout the application.
-"""
+"""Contact model definition module."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
-from sqlalchemy import (
-    Boolean,
-    Integer,
-    String,
-    ForeignKey,
-    UniqueConstraint,
-    func,
-)
+
+from sqlalchemy import Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 from sqlalchemy.ext.hybrid import hybrid_property
 
 from app.db.database import Base
-from app.db.types import TZDateTime, create_email_check_constraint
+from app.db.types import create_email_check_constraint
+from app.db.utils import (
+    EMAIL_LENGTH,
+    NAME_LENGTH,
+    PHONE_LENGTH,
+    SHORT_STRING_LENGTH,
+    create_phone_constraint,
+)
+from app.db.models.mixins import TimestampMixin, ActiveMixin
+from app.db.models.associations import (
+    contact_categories,
+    contact_services,
+    community_contacts,
+)
 
 if TYPE_CHECKING:
     from app.db.models.user import User
@@ -2199,37 +2392,45 @@ if TYPE_CHECKING:
     from app.db.models.contact_endorsement import ContactEndorsement
 
 
-class Contact(Base):
-    """
-    Represents a service provider contact in the system.
+@dataclass
+class ContactCreate:
+    """Data transfer object for creating a new Contact."""
 
-    Contact entities store comprehensive information about service providers,
-    including their professional details, service offerings, and community
-    relationships. Each contact can receive endorsements from community members
-    and offer multiple services across different categories.
+    user_id: int
+    contact_name: str
+    primary_contact_first_name: str
+    primary_contact_last_name: str
+    email: Optional[str] = None
+    contact_number: Optional[str] = None
+    primary_contact_contact_number: Optional[str] = None
+
+
+class Contact(TimestampMixin, ActiveMixin, Base):
+    """
+    Contact model for service providers.
+
+    Represents service providers in the system, maintaining their professional details,
+    service offerings, and community relationships.
 
     Attributes:
-        id: Unique identifier for the contact
-        user_id: ID of the user who created this contact
-        contact_name: Business or organization name
-        email: Primary contact email address
-        contact_number: Primary phone number
-        primary_contact_first_name: First name of main contact person
-        primary_contact_last_name: Last name of main contact person
-        primary_contact_contact_number: Direct number for main contact
-        endorsements_count: Number of endorsements received
-        average_rating: Average rating from endorsements
-        verified_endorsements_count: Number of verified endorsements
-        is_active: Whether the contact is currently active
-        created_at: Timestamp of contact creation
-        updated_at: Timestamp of last update
+        id (int): Unique identifier
+        user_id (int): ID of creating user
+        contact_name (str): Business/organization name
+        email (str, optional): Primary email address
+        contact_number (str, optional): Primary phone number
+        primary_contact_first_name (str): First name of main contact
+        primary_contact_last_name (str): Last name of main contact
+        primary_contact_contact_number (str, optional): Direct number for main contact
+        endorsements_count (int): Total endorsements received
+        average_rating (float, optional): Average rating from endorsements
+        verified_endorsements_count (int): Number of verified endorsements
 
     Relationships:
-        user: User who created this contact
-        communities: Communities this contact belongs to
-        categories: Service categories offered
-        services: Specific services offered
-        endorsements: Endorsements received from community members
+        user: Creating user
+        communities: Associated communities
+        categories: Service categories
+        services: Offered services
+        endorsements: Received endorsements
     """
 
     __tablename__ = "contacts"
@@ -2242,26 +2443,26 @@ class Contact(Base):
         index=True,
     )
     contact_name: Mapped[str] = mapped_column(
-        String(100),
+        String(NAME_LENGTH),
         nullable=False,
         index=True,
     )
     email: Mapped[Optional[str]] = mapped_column(
-        String(255),
+        String(EMAIL_LENGTH),
         unique=True,
         index=True,
     )
-    contact_number: Mapped[Optional[str]] = mapped_column(String(20))
+    contact_number: Mapped[Optional[str]] = mapped_column(String(PHONE_LENGTH))
     primary_contact_first_name: Mapped[str] = mapped_column(
-        String(50),
+        String(SHORT_STRING_LENGTH),
         nullable=False,
     )
     primary_contact_last_name: Mapped[str] = mapped_column(
-        String(50),
+        String(SHORT_STRING_LENGTH),
         nullable=False,
     )
     primary_contact_contact_number: Mapped[Optional[str]] = mapped_column(
-        String(20),
+        String(PHONE_LENGTH),
     )
     endorsements_count: Mapped[int] = mapped_column(
         Integer,
@@ -2277,46 +2478,35 @@ class Contact(Base):
         default=0,
         nullable=False,
     )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        TZDateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        TZDateTime(timezone=True),
-        onupdate=func.now(),
-    )
 
     # Relationships
-    user: Mapped["User"] = relationship(
+    user: Mapped[User] = relationship(
         "User",
         back_populates="contacts",
         lazy="joined",
     )
-    communities: Mapped[List["Community"]] = relationship(
+    communities: Mapped[List[Community]] = relationship(
         "Community",
-        secondary="community_contacts",
+        secondary=community_contacts,
         back_populates="contacts",
         lazy="selectin",
+        order_by="Community.name",
     )
-    categories: Mapped[List["Category"]] = relationship(
+    categories: Mapped[List[Category]] = relationship(
         "Category",
-        secondary="contact_categories",
+        secondary=contact_categories,
         back_populates="contacts",
         lazy="selectin",
+        order_by="Category.name",
     )
-    services: Mapped[List["Service"]] = relationship(
+    services: Mapped[List[Service]] = relationship(
         "Service",
-        secondary="contact_services",
+        secondary=contact_services,
         back_populates="contacts",
         lazy="selectin",
+        order_by="Service.name",
     )
-    endorsements: Mapped[List["ContactEndorsement"]] = relationship(
+    endorsements: Mapped[List[ContactEndorsement]] = relationship(
         "ContactEndorsement",
         back_populates="contact",
         cascade="all, delete-orphan",
@@ -2324,75 +2514,54 @@ class Contact(Base):
     )
 
     __table_args__ = (
-        # Email format check
         create_email_check_constraint("email"),
-        # Unique constraint for contact-community relationship
-        UniqueConstraint(
-            "contact_name", "community_id", name="uq_contact_name_per_community"
+        create_phone_constraint("contact_number"),
+        create_phone_constraint("primary_contact_contact_number"),
+        # Combined index for name-based searches
+        # This improves performance when searching by full name or sorting by name
+        Index(
+            "idx_contacts_primary_contact_name",
+            "primary_contact_last_name",
+            "primary_contact_first_name",
+        ),
+        # Trigram index for fuzzy contact name searches
+        # Note: This requires the pg_trgm extension to be installed
+        Index(
+            "idx_contacts_contact_name_trgm",
+            text("contact_name gin_trgm_ops"),
+            postgresql_using="gin",
+        ),
+        # Composite index for endorsement-related queries
+        # This speeds up queries that filter by endorsement counts and ratings
+        Index(
+            "idx_contacts_endorsement_metrics",
+            "endorsements_count",
+            "average_rating",
+            "verified_endorsements_count",
+            "is_active",
         ),
     )
 
-    def __init__(
-        self,
-        user_id: int,
-        contact_name: str,
-        *,  # Force keyword arguments
-        primary_contact_first_name: str,
-        primary_contact_last_name: str,
-        email: Optional[str] = None,
-        contact_number: Optional[str] = None,
-        primary_contact_contact_number: Optional[str] = None,
-    ) -> None:
-        """
-        Initialize a new Contact instance.
-
-        Args:
-            user_id: ID of the user creating the contact
-            contact_name: Business or organization name
-            primary_contact_first_name: First name of main contact person
-            primary_contact_last_name: Last name of main contact person
-            email: Optional email address
-            contact_number: Optional primary phone number
-            primary_contact_contact_number: Optional direct number for main contact
-        """
-        super().__init__(
-            user_id=user_id,
-            contact_name=contact_name,
-            primary_contact_first_name=primary_contact_first_name,
-            primary_contact_last_name=primary_contact_last_name,
-            email=email,
-            contact_number=contact_number,
-            primary_contact_contact_number=primary_contact_contact_number,
-        )
+    @classmethod
+    def create(cls, data: ContactCreate) -> Contact:
+        """Create a new Contact from ContactCreate data."""
+        return cls(**data.__dict__)
 
     def __repr__(self) -> str:
-        """
-        Return a string representation of the Contact instance.
-
-        Returns:
-            String containing the contact's ID and name
-        """
+        """Return string representation."""
         return f"Contact(id={self.id}, name={self.contact_name})"
 
     @hybrid_property
     def primary_contact_full_name(self) -> str:
-        """
-        Get the full name of the primary contact person.
-
-        Returns:
-            Concatenated first and last name
-        """
+        """Get full name of primary contact person."""
         return f"{self.primary_contact_first_name} {self.primary_contact_last_name}"
 
-    def add_endorsement(self, endorsement: "ContactEndorsement") -> None:
+    def add_endorsement(self, endorsement: ContactEndorsement) -> None:
         """
-        Add a new endorsement to the contact and update metrics.
-
-        This method handles the addition of a new endorsement while maintaining
-        accurate counts and average ratings.
+        Add endorsement and update metrics.
 
         Args:
-            endorsement: The endorsement to add
+            endorsement: New endorsement to add
         """
         self.endorsements.append(endorsement)
         self.endorsements_count += 1
@@ -2403,15 +2572,12 @@ class Contact(Base):
         if endorsement.rating:
             self._update_average_rating()
 
-    def remove_endorsement(self, endorsement: "ContactEndorsement") -> None:
+    def remove_endorsement(self, endorsement: ContactEndorsement) -> None:
         """
-        Remove an endorsement from the contact and update metrics.
-
-        This method handles the removal of an endorsement while maintaining
-        accurate counts and average ratings.
+        Remove endorsement and update metrics.
 
         Args:
-            endorsement: The endorsement to remove
+            endorsement: Endorsement to remove
         """
         if endorsement in self.endorsements:
             self.endorsements.remove(endorsement)
@@ -2424,12 +2590,7 @@ class Contact(Base):
                 self._update_average_rating()
 
     def _update_average_rating(self) -> None:
-        """
-        Update the average rating based on current endorsements.
-
-        This internal method recalculates the average rating considering
-        only endorsements with valid ratings.
-        """
+        """Update average rating based on current endorsements."""
         rated_endorsements = [e for e in self.endorsements if e.rating is not None]
         if rated_endorsements:
             total_rating = sum(e.rating for e in rated_endorsements)
@@ -2437,45 +2598,238 @@ class Contact(Base):
         else:
             self.average_rating = None
 
-    def verify_endorsement(self, endorsement: "ContactEndorsement") -> None:
+    def verify_endorsement(self, endorsement: ContactEndorsement) -> None:
         """
-        Mark an endorsement as verified and update verification counts.
+        Mark endorsement as verified.
 
         Args:
-            endorsement: The endorsement to verify
+            endorsement: Endorsement to verify
 
         Raises:
-            ValueError: If the endorsement is not associated with this contact
+            ValueError: If endorsement doesn't belong to this contact
         """
         if endorsement not in self.endorsements:
             raise ValueError("Endorsement does not belong to this contact")
 
         if not endorsement.is_verified:
             endorsement.is_verified = True
-            endorsement.verification_date = datetime.now()
             self.verified_endorsements_count += 1
 
-    def get_services_by_category(self, category_id: int) -> List["Service"]:
-        """
-        Get all services offered by this contact in a specific category.
-
-        Args:
-            category_id: ID of the category to filter by
-
-        Returns:
-            List of services in the specified category
-        """
+    def get_services_by_category(self, category_id: int) -> List[Service]:
+        """Get all services in specified category."""
         return [s for s in self.services if s.category_id == category_id]
 
     def is_endorsed_in_community(self, community_id: int) -> bool:
-        """
-        Check if the contact has any endorsements in a specific community.
-
-        Args:
-            community_id: ID of the community to check
-
-        Returns:
-            True if the contact has endorsements in the community
-        """
+        """Check if contact has endorsements in specified community."""
         return any(e.community_id == community_id for e in self.endorsements)
+
+
+<<< Processing file: ./utils.py >>>
+
+"""Database utility functions and constants."""
+
+from typing import Optional
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Integer,
+    String,
+    ForeignKey,
+    CheckConstraint,
+    UniqueConstraint,
+)
+
+# Common column lengths
+DEFAULT_STRING_LENGTH = 255
+SHORT_STRING_LENGTH = 50
+MEDIUM_STRING_LENGTH = 100
+LONG_STRING_LENGTH = 500
+NAME_LENGTH = 100
+DESCRIPTION_LENGTH = 255
+COMMENT_LENGTH = 500
+PHONE_LENGTH = 20
+EMAIL_LENGTH = 255
+POSTAL_LENGTH = 200
+SLUG_LENGTH = 100
+
+
+def create_foreign_key_column(
+    target_table: str,
+    *,
+    nullable: bool = False,
+    primary_key: bool = False,
+    unique: bool = False,
+    index: bool = True,
+    doc: Optional[str] = None,
+    ondelete: str = "CASCADE",
+    name: Optional[str] = None,
+) -> Column:
+    """Create a standardized foreign key column.
+
+    Args:
+        target_table: Name of the referenced table
+        nullable: Whether the column can be NULL
+        primary_key: Whether this is a primary key
+        unique: Whether values must be unique
+        index: Whether to create an index
+        doc: Column documentation
+        ondelete: ON DELETE behavior ("CASCADE", "SET NULL", etc)
+        name: Optional custom column name
+
+    Returns:
+        SQLAlchemy Column instance
+    """
+    column_name = name or f"{target_table.rstrip('s')}_id"
+    return Column(
+        column_name,
+        Integer,
+        ForeignKey(f"{target_table}.id", ondelete=ondelete),
+        nullable=nullable,
+        primary_key=primary_key,
+        unique=unique,
+        index=index,
+        doc=doc,
+    )
+
+
+def create_string_column(
+    length: int = DEFAULT_STRING_LENGTH,
+    *,
+    nullable: bool = True,
+    unique: bool = False,
+    index: bool = False,
+    doc: Optional[str] = None,
+) -> Column:
+    """Create a standardized string column.
+
+    Args:
+        length: Maximum string length
+        nullable: Whether the column can be NULL
+        unique: Whether values must be unique
+        index: Whether to create an index
+        doc: Column documentation
+
+    Returns:
+        SQLAlchemy Column instance
+    """
+    return Column(
+        String(length),
+        nullable=nullable,
+        unique=unique,
+        index=index,
+        doc=doc,
+    )
+
+
+def create_boolean_column(
+    *,
+    default: bool = False,
+    nullable: bool = False,
+    doc: Optional[str] = None,
+) -> Column:
+    """Create a standardized boolean column.
+
+    Args:
+        default: Default value if not specified
+        nullable: Whether the column can be NULL
+        doc: Column documentation
+
+    Returns:
+        SQLAlchemy Column instance
+    """
+    return Column(
+        Boolean,
+        default=default,
+        nullable=nullable,
+        doc=doc,
+    )
+
+
+def create_unique_constraint(
+    *columns: str,
+    name: Optional[str] = None,
+) -> UniqueConstraint:
+    """Create a named unique constraint.
+
+    Args:
+        *columns: Column names to include in constraint
+        name: Optional constraint name
+
+    Returns:
+        SQLAlchemy UniqueConstraint instance
+    """
+    if name is None:
+        name = f"uq_{'_'.join(columns)}"
+    return UniqueConstraint(*columns, name=name)
+
+
+def create_check_constraint(
+    condition: str,
+    name: Optional[str] = None,
+) -> CheckConstraint:
+    """Create a named check constraint.
+
+    Args:
+        condition: Check condition expression
+        name: Optional constraint name
+
+    Returns:
+        SQLAlchemy CheckConstraint instance
+    """
+    return CheckConstraint(condition, name=name)
+
+
+def validate_phone_number(value: Optional[str]) -> Optional[str]:
+    """Validate and format a phone number.
+
+    Args:
+        value: Phone number to validate
+
+    Returns:
+        Formatted phone number or None
+
+    Raises:
+        ValueError: If phone number is invalid
+    """
+    if not value:
+        return None
+
+    # Remove any non-digit characters
+    digits = "".join(filter(str.isdigit, value))
+
+    # Basic validation - should be between 10 and 15 digits
+    if not 10 <= len(digits) <= 15:
+        raise ValueError("Phone number must be between 10 and 15 digits")
+
+    return digits
+
+
+def create_phone_constraint(column: str) -> CheckConstraint:
+    """Create a check constraint for phone numbers.
+
+    Args:
+        column: Name of the phone number column
+
+    Returns:
+        SQLAlchemy CheckConstraint instance
+    """
+    return CheckConstraint(
+        f"length(regexp_replace({column}, '[^0-9]', '', 'g')) BETWEEN 10 AND 15",
+        name=f"valid_{column}_format",
+    )
+
+
+def create_email_constraint(column: str) -> CheckConstraint:
+    """Create a check constraint for email addresses.
+
+    Args:
+        column: Name of the email column
+
+    Returns:
+        SQLAlchemy CheckConstraint instance
+    """
+    return CheckConstraint(
+        f"{column} ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{{2,}}$'",
+        name=f"valid_{column}_format",
+    )
 
