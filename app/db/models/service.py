@@ -8,10 +8,12 @@ from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
     Boolean,
+    Index,
     Integer,
     String,
     ForeignKey,
     Numeric,
+    text,
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
@@ -127,6 +129,27 @@ class Service(TimestampMixin, ActiveMixin, NameMixin, Base):
         back_populates="services",
         lazy="selectin",
         order_by="Contact.contact_name",
+    )
+
+    __table_args__ = (
+        # Existing constraints remain...
+        # Optimize price-based service searches
+        # This partial index only includes active services
+        Index(
+            "idx_services_price",
+            "category_id",
+            "base_price",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
+        # Optimize availability-based queries
+        Index(
+            "idx_services_availability",
+            "is_remote_available",
+            "requires_consultation",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
     )
 
     @classmethod

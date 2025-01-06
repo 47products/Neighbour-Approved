@@ -19,6 +19,7 @@ from app.db.models.associations import user_roles
 from app.db.utils import (
     SHORT_STRING_LENGTH,
     COMMENT_LENGTH,
+    create_check_constraint,
 )
 
 if TYPE_CHECKING:
@@ -86,6 +87,13 @@ class Role(TimestampMixin, ActiveMixin, NameMixin, Base):
         back_populates="roles",
         lazy="selectin",
         order_by="User.last_name",
+    )
+
+    __table_args__ = (
+        create_check_constraint(
+            "permissions IS NULL OR json_typeof(permissions::json) = 'array'",
+            name="valid_permissions_json",
+        ),
     )
 
     @classmethod

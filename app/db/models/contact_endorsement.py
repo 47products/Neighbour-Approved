@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 from sqlalchemy import (
     Boolean,
+    Index,
     Integer,
     String,
     ForeignKey,
+    text,
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
@@ -137,6 +139,22 @@ class ContactEndorsement(
         create_check_constraint(
             "rating IS NULL OR (rating >= 1 AND rating <= 5)",
             name="valid_rating_range",
+        ),
+        # Optimize verified endorsement queries
+        Index(
+            "idx_contact_endorsements_verified",
+            "contact_id",
+            "is_verified",
+            "rating",
+            postgresql_where=text("is_verified = true"),
+        ),
+        # Optimize community-based endorsement queries with included columns
+        # The INCLUDE clause adds columns to the index leaf nodes without making them part of the key
+        Index(
+            "idx_contact_endorsements_community",
+            "community_id",
+            "created_at",
+            postgresql_include=["rating", "is_verified"],
         ),
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy import Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 from sqlalchemy.ext.hybrid import hybrid_property
 
@@ -158,6 +158,29 @@ class Contact(TimestampMixin, ActiveMixin, Base):
         create_email_check_constraint("email"),
         create_phone_constraint("contact_number"),
         create_phone_constraint("primary_contact_contact_number"),
+        # Combined index for name-based searches
+        # This improves performance when searching by full name or sorting by name
+        Index(
+            "idx_contacts_primary_contact_name",
+            "primary_contact_last_name",
+            "primary_contact_first_name",
+        ),
+        # Trigram index for fuzzy contact name searches
+        # Note: This requires the pg_trgm extension to be installed
+        Index(
+            "idx_contacts_contact_name_trgm",
+            text("contact_name gin_trgm_ops"),
+            postgresql_using="gin",
+        ),
+        # Composite index for endorsement-related queries
+        # This speeds up queries that filter by endorsement counts and ratings
+        Index(
+            "idx_contacts_endorsement_metrics",
+            "endorsements_count",
+            "average_rating",
+            "verified_endorsements_count",
+            "is_active",
+        ),
     )
 
     @classmethod
