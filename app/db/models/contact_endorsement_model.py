@@ -14,22 +14,22 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database import Base
-from app.db.models.mixins import (
+from app.db.database_configuration import Base
+from app.db.models.base_mixins import (
     TimestampMixin,
     VerificationMixin,
     VisibilityMixin,
 )
-from app.db.utils import (
+from app.db.database_utils import (
     COMMENT_LENGTH,
     create_check_constraint,
     create_unique_constraint,
 )
 
 if TYPE_CHECKING:
-    from app.db.models.user import User
-    from app.db.models.community import Community
-    from app.db.models.contact import Contact
+    from app.db.models.user_model import User
+    from app.db.models.community_model import Community
+    from app.db.models.contact_model import Contact
 
 
 @dataclass

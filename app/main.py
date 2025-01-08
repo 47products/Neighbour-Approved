@@ -13,7 +13,7 @@ from fastapi import FastAPI
 import structlog
 from app.api.v1.routers import api_router
 from app.core.error_handling import setup_error_handlers
-from app.core.logging import setup_logging
+from app.core.logging_configuration import setup_logging
 from app.core.logging_middleware import setup_logging_middleware
 
 # Initialize logger

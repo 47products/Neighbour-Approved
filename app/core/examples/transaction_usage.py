@@ -9,10 +9,10 @@ transactions throughout the application.
 from typing import List, Optional
 from fastapi import logger
 from sqlalchemy.orm import Session
-from app.db.models.user import User
-from app.db.models.community import Community
-from app.db.models.contact import Contact
-from app.core.transaction import (
+from app.db.models.user_model import User
+from app.db.models.community_model import Community
+from app.db.models.contact_model import Contact
+from app.core.transaction_manager import (
     transactional,
     async_transactional,
     TransactionManager,

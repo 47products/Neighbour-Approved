@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, TypeVar
 from sqlalchemy import Boolean, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
-from app.db.types import TZDateTime
+from app.db.database_types import TZDateTime
 
 T = TypeVar("T")
 

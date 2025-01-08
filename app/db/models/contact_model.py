@@ -9,28 +9,28 @@ from sqlalchemy import Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 from sqlalchemy.ext.hybrid import hybrid_property
 
-from app.db.database import Base
-from app.db.types import create_email_check_constraint
-from app.db.utils import (
+from app.db.database_configuration import Base
+from app.db.database_types import create_email_check_constraint
+from app.db.database_utils import (
     EMAIL_LENGTH,
     NAME_LENGTH,
     PHONE_LENGTH,
     SHORT_STRING_LENGTH,
     create_phone_constraint,
 )
-from app.db.models.mixins import TimestampMixin, ActiveMixin
-from app.db.models.associations import (
+from app.db.models.base_mixins import TimestampMixin, ActiveMixin
+from app.db.models.association_tables import (
     contact_categories,
     contact_services,
     community_contacts,
 )
 
 if TYPE_CHECKING:
-    from app.db.models.user import User
-    from app.db.models.community import Community
-    from app.db.models.category import Category
-    from app.db.models.service import Service
-    from app.db.models.contact_endorsement import ContactEndorsement
+    from app.db.models.user_model import User
+    from app.db.models.community_model import Community
+    from app.db.models.category_model import Category
+    from app.db.models.service_model import Service
+    from app.db.models.contact_endorsement_model import ContactEndorsement
 
 
 @dataclass

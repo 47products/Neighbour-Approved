@@ -10,10 +10,10 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.logging import get_logger
-from app.db.models.user import User
-from app.db.models.community import Community
-from app.core.transaction import transactional
+from app.core.logging_configuration import get_logger
+from app.db.models.user_model import User
+from app.db.models.community_model import Community
+from app.core.transaction_manager import transactional
 
 
 class UserActivityLogger:

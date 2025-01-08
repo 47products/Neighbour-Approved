@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 import app
-from app.db.types import TZDateTime
+from app.db.database_types import TZDateTime
 
 # revision identifiers, used by Alembic.
 revision: str = "c0cf1361e092"

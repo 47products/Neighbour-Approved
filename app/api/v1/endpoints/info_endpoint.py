@@ -4,7 +4,7 @@ This module defines the `/info` endpoint for the Neighbour Approved backend appl
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from app.api.v1.schemas.info import InfoResponse
+from app.api.v1.schemas.info_schema import InfoResponse
 
 router = APIRouter(tags=["Info"], responses={404: {"description": "Not Found"}})
 

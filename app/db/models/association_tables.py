@@ -1,7 +1,14 @@
 """Association tables for model relationships."""
 
 from sqlalchemy import Table, Column, Integer, ForeignKey
-from app.db.database import Base
+from app.db.database_configuration import Base
+
+CONTACTS_ID = "contacts.id"
+COMMUNITIES_ID = "communities.id"
+CATEGORIES_ID = "categories.id"
+ROLES_ID = "roles.id"
+SERVICES_ID = "services.id"
+USERS_ID = "users.id"
 
 # Contact and Category association
 contact_categories = Table(
@@ -10,14 +17,14 @@ contact_categories = Table(
     Column(
         "contact_id",
         Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
+        ForeignKey(CONTACTS_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "category_id",
         Integer,
-        ForeignKey("categories.id", ondelete="CASCADE"),
+        ForeignKey(CATEGORIES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
@@ -30,14 +37,14 @@ contact_services = Table(
     Column(
         "contact_id",
         Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
+        ForeignKey(CONTACTS_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "service_id",
         Integer,
-        ForeignKey("services.id", ondelete="CASCADE"),
+        ForeignKey(SERVICES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
@@ -50,14 +57,14 @@ community_contacts = Table(
     Column(
         "community_id",
         Integer,
-        ForeignKey("communities.id", ondelete="CASCADE"),
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "contact_id",
         Integer,
-        ForeignKey("contacts.id", ondelete="CASCADE"),
+        ForeignKey(CONTACTS_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
@@ -70,14 +77,14 @@ user_roles = Table(
     Column(
         "user_id",
         Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(USERS_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "role_id",
         Integer,
-        ForeignKey("roles.id", ondelete="CASCADE"),
+        ForeignKey(ROLES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
@@ -90,14 +97,14 @@ user_communities = Table(
     Column(
         "user_id",
         Integer,
-        ForeignKey("users.id", ondelete="CASCADE"),
+        ForeignKey(USERS_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "community_id",
         Integer,
-        ForeignKey("communities.id", ondelete="CASCADE"),
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
@@ -110,14 +117,14 @@ community_relationships = Table(
     Column(
         "community_a_id",
         Integer,
-        ForeignKey("communities.id", ondelete="CASCADE"),
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),
     Column(
         "community_b_id",
         Integer,
-        ForeignKey("communities.id", ondelete="CASCADE"),
+        ForeignKey(COMMUNITIES_ID, ondelete="CASCADE"),
         primary_key=True,
         index=True,
     ),

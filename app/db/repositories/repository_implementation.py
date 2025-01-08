@@ -13,8 +13,8 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
 import structlog
 
-from app.db.repositories.base import IRepository
-from app.db.database import Base
+from app.db.repositories.repository_interface import IRepository
+from app.db.database_configuration import Base
 from app.core.error_handling import DatabaseError, RecordNotFoundError
 
 ModelType = TypeVar("ModelType")

@@ -11,7 +11,7 @@ additional routers can be included following the established pattern.
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import info, health
+from app.api.v1.endpoints import health_check_endpoint, info_endpoint
 
 # Initialize the main API router without a prefix
 api_router = APIRouter(
@@ -20,7 +20,7 @@ api_router = APIRouter(
 
 # Include the `info` router with its specific prefix and tag
 api_router.include_router(
-    info.router,
+    info_endpoint.router,
     prefix="/info",
     tags=["Info"],
     responses={404: {"description": "Info Not Found"}},
@@ -28,7 +28,7 @@ api_router.include_router(
 
 # Include the `health` router without an additional prefix
 api_router.include_router(
-    health.router,
+    health_check_endpoint.router,
     prefix="/health",
     tags=["Health"],
     responses={404: {"description": "Health Endpoint Not Found"}},
