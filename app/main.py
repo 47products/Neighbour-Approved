@@ -6,47 +6,54 @@ functionality including error handling, routing, and middleware. It uses the
 recommended lifespan approach for handling application lifecycle events.
 """
 
+import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.api.v1.routers import api_router
 from app.core.error_handling import setup_error_handlers
+from app.core.logging import setup_logging
+from app.core.logging_middleware import setup_logging_middleware
 import structlog
 
+# Initialize logger
 logger = structlog.get_logger(__name__)
+
+# Ensure logs directory exists
+LOGS_DIR = Path("logs")
+LOGS_DIR.mkdir(exist_ok=True)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Handle application lifecycle events.
-
-    This context manager handles startup and shutdown events for the application,
-    ensuring proper initialization and cleanup of resources.
-    """
+    """Handle application lifecycle events with enhanced logging."""
     # Startup
-    logger.info("🟢 Application starting up.")
-    # Add any startup initialization here (database connections, caches, etc.)
+    logger.info(
+        "application_starting",
+        environment=os.getenv("ENVIRONMENT", "development"),
+        debug_mode=app.debug,
+    )
 
     yield  # Application running
 
     # Shutdown
-    logger.info("🔴 Application shutting down.")
-    # Add any cleanup code here (closing connections, etc.)
+    logger.info("application_shutdown")
 
 
 def create_application() -> FastAPI:
-    """
-    Create and configure the FastAPI application.
+    """Create and configure the FastAPI application with logging."""
+    # Initialize logging first
+    setup_logging()
 
-    Returns:
-        A configured FastAPI application instance.
-    """
     application = FastAPI(
         title="Neighbour Approved",
         description="A platform for community-driven endorsements of contractors.",
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # Set up middleware (including logging middleware)
+    setup_logging_middleware(application)
 
     # Set up error handlers
     setup_error_handlers(application)
