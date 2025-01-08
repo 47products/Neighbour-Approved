@@ -14,7 +14,7 @@ from alembic import context
 env_path = Path(__file__).parents[2] / ".env"
 load_dotenv(env_path)
 
-from app.db.database import Base
+from app.db.database_configuration import Base
 from app.db.config import Settings
 from app.db import models
 

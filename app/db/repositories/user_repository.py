@@ -36,9 +36,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import HTTPException, status
 
-from app.db.repositories.repository import BaseRepository
-from app.db.models.user import User
-from app.api.v1.schemas.user import UserCreate, UserUpdate
+from app.db.repositories.repository_implementation import BaseRepository
+from app.db.models.user_model import User
+from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
 from app.core.error_handling import (
     DatabaseError,
     RecordNotFoundError,

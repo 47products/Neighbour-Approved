@@ -9,23 +9,23 @@ from dataclasses import dataclass
 from sqlalchemy import ForeignKey, Integer, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database import Base
-from app.db.models.mixins import (
+from app.db.database_configuration import Base
+from app.db.models.base_mixins import (
     TimestampMixin,
     ActiveMixin,
     NameMixin,
     CounterMixin,
 )
-from app.db.models.associations import (
+from app.db.models.association_tables import (
     community_contacts,
     community_relationships,
     user_communities,
 )
 
 if TYPE_CHECKING:
-    from app.db.models.user import User
-    from app.db.models.contact import Contact
-    from app.db.models.contact_endorsement import ContactEndorsement
+    from app.db.models.user_model import User
+    from app.db.models.contact_model import Contact
+    from app.db.models.contact_endorsement_model import ContactEndorsement
 
 
 class PrivacyLevel(str, enum.Enum):

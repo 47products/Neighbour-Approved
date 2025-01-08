@@ -10,15 +10,15 @@ The module also exports common database components like the Base class and
 custom types, making them easily accessible to other parts of the application.
 """
 
-from app.db.database import Base
-from app.db.types import TZDateTime
-from app.db.models.user import User
-from app.db.models.role import Role
-from app.db.models.community import Community, PrivacyLevel
-from app.db.models.category import Category
-from app.db.models.service import Service
-from app.db.models.contact import Contact
-from app.db.models.contact_endorsement import ContactEndorsement
+from app.db.database_configuration import Base
+from app.db.database_types import TZDateTime
+from app.db.models.user_model import User
+from app.db.models.role_model import Role
+from app.db.models.community_model import Community, PrivacyLevel
+from app.db.models.category_model import Category
+from app.db.models.service_model import Service
+from app.db.models.contact_model import Contact
+from app.db.models.contact_endorsement_model import ContactEndorsement
 
 # Version information
 __version__ = "1.0.0"

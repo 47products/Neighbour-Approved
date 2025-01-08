@@ -9,21 +9,21 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database import Base
-from app.db.models.mixins import (
+from app.db.database_configuration import Base
+from app.db.models.base_mixins import (
     TimestampMixin,
     ActiveMixin,
     NameMixin,
 )
-from app.db.models.associations import user_roles
-from app.db.utils import (
+from app.db.models.association_tables import user_roles
+from app.db.database_utils import (
     SHORT_STRING_LENGTH,
     COMMENT_LENGTH,
     create_check_constraint,
 )
 
 if TYPE_CHECKING:
-    from app.db.models.user import User
+    from app.db.models.user_model import User
 
 
 @dataclass

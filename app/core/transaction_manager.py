@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import structlog
 
-from app.db.session import get_db
+from app.db.database_session_management import get_db
 from app.core.error_handling import DatabaseError
 
 logger = structlog.get_logger(__name__)

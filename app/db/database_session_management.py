@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
-from app.db.database import SessionLocal
+from app.db.database_configuration import SessionLocal
 
 
 def get_db() -> Generator[Session, Any, None]:

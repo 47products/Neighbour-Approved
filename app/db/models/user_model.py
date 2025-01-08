@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database import Base
-from app.db.models.mixins import TimestampMixin, ActiveMixin
-from app.db.models.associations import (
+from app.db.database_configuration import Base
+from app.db.models.base_mixins import TimestampMixin, ActiveMixin
+from app.db.models.association_tables import (
     user_roles,
     user_communities,
 )
-from app.db.utils import (
+from app.db.database_utils import (
     EMAIL_LENGTH,
     SHORT_STRING_LENGTH,
     POSTAL_LENGTH,
@@ -25,10 +25,10 @@ from app.db.utils import (
 )
 
 if TYPE_CHECKING:
-    from app.db.models.contact import Contact
-    from app.db.models.role import Role
-    from app.db.models.community import Community
-    from app.db.models.contact_endorsement import ContactEndorsement
+    from app.db.models.contact_model import Contact
+    from app.db.models.role_model import Role
+    from app.db.models.community_model import Community
+    from app.db.models.contact_endorsement_model import ContactEndorsement
 
 
 @dataclass

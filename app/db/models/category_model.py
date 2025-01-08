@@ -13,20 +13,20 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column, declared_attr
 
-from app.db.database import Base
-from app.db.models.associations import contact_categories
-from app.db.models.mixins import (
+from app.db.database_configuration import Base
+from app.db.models.association_tables import contact_categories
+from app.db.models.base_mixins import (
     TimestampMixin,
     ActiveMixin,
     NameMixin,
     SlugMixin,
     OrderMixin,
 )
-from app.db.utils import DEFAULT_STRING_LENGTH
+from app.db.database_utils import DEFAULT_STRING_LENGTH
 
 if TYPE_CHECKING:
-    from app.db.models.contact import Contact
-    from app.db.models.service import Service
+    from app.db.models.contact_model import Contact
+    from app.db.models.service_model import Service
 
 
 @dataclass

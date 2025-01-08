@@ -17,21 +17,21 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database import Base
-from app.db.utils import (
+from app.db.database_configuration import Base
+from app.db.database_utils import (
     COMMENT_LENGTH,
     SHORT_STRING_LENGTH,
 )
-from app.db.models.mixins import (
+from app.db.models.base_mixins import (
     TimestampMixin,
     ActiveMixin,
     NameMixin,
 )
-from app.db.models.associations import contact_services
+from app.db.models.association_tables import contact_services
 
 if TYPE_CHECKING:
-    from app.db.models.category import Category
-    from app.db.models.contact import Contact
+    from app.db.models.category_model import Category
+    from app.db.models.contact_model import Contact
 
 
 @dataclass
