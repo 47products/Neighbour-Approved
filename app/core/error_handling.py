@@ -8,7 +8,7 @@ in a consistent manner.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -16,7 +16,6 @@ from sqlalchemy.exc import (
     IntegrityError,
     NoResultFound,
     SQLAlchemyError,
-    DBAPIError,
 )
 import structlog
 from pydantic import BaseModel

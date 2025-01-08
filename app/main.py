@@ -10,11 +10,11 @@ import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import structlog
 from app.api.v1.routers import api_router
 from app.core.error_handling import setup_error_handlers
 from app.core.logging import setup_logging
 from app.core.logging_middleware import setup_logging_middleware
-import structlog
 
 # Initialize logger
 logger = structlog.get_logger(__name__)
@@ -25,13 +25,13 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(application: FastAPI):
     """Handle application lifecycle events with enhanced logging."""
     # Startup
     logger.info(
         "application_starting",
         environment=os.getenv("ENVIRONMENT", "development"),
-        debug_mode=app.debug,
+        debug_mode=application.debug,
     )
 
     yield  # Application running

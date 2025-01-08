@@ -9,8 +9,8 @@ capabilities.
 
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, Optional, TypeVar, cast
-from fastapi import HTTPException, status
+from typing import Any, Callable, Generator, TypeVar, cast
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 import structlog
 
