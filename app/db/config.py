@@ -172,6 +172,28 @@ class Settings(DatabaseSettings):
         description="Allowed CORS origins",
     )
 
+    # Logging Configuration
+    LOG_LEVEL: str = Field(
+        "INFO",
+        description="Logging level",
+    )
+    LOG_FORMAT: str = Field(
+        "json",
+        description="Log format (json or standard)",
+    )
+    LOG_PATH: str = Field(
+        "logs",
+        description="Path to log files directory",
+    )
+    ENABLE_REQUEST_LOGGING: bool = Field(
+        True,
+        description="Enable HTTP request logging",
+    )
+    ENABLE_SQL_LOGGING: bool = Field(
+        False,
+        description="Enable SQL query logging",
+    )
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
@@ -235,6 +257,24 @@ class Settings(DatabaseSettings):
         if not v.startswith("/"):
             v = f"/{v}"
         return v.rstrip("/")
+
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate logging level."""
+        allowed_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if v.upper() not in allowed_levels:
+            raise ValueError(f"Log level must be one of: {', '.join(allowed_levels)}")
+        return v.upper()
+
+    @field_validator("LOG_FORMAT")
+    @classmethod
+    def validate_log_format(cls, v: str) -> str:
+        """Validate log format."""
+        allowed_formats = {"json", "standard"}
+        if v.lower() not in allowed_formats:
+            raise ValueError(f"Log format must be one of: {', '.join(allowed_formats)}")
+        return v.lower()
 
 
 @lru_cache()
