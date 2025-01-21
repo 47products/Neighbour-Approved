@@ -52,7 +52,7 @@ Neighbour Approved’s revenue model is subscription-based, designed to meet the
 - **Annual Group Subscriptions**: Communities will pay a yearly fee to access the platform and its features.
 - **Sponsorship Opportunities**: Members or contractors may sponsor specific subsections within a community, enabling targeted endorsements and increased visibility.
 - **Priority Listings**: Communities can allow contractors or contacts to bid for priority listing positions, enhancing their prominence within the platform.
-- **Verified Contacts**: For an additional fee, communities and members can verify requests from contacts, ensuring trust and reliability in shared service providers. 
+- **Verified Contacts**: For an additional fee, communities and members can verify requests from contacts, ensuring trust and reliability in shared service providers.
 
 **Security**\
 All intellectual property (IP) is securely stored in a private GitHub repository and documented within Google Drive, managed by 47products (Pty) Ltd. This ensures the protection and confidentiality of the platform’s proprietary assets.
@@ -78,7 +78,7 @@ Creating a secure platform that allows members to add, categorise, and endorse t
 Living estates, gated communities, and other groups requiring vetted service providers.
 
 **How does your startup make money (who buys what and why)?**\
-Neighbour Approved charges communities (e.g., estates) a subscription fee for platform access. Communities value the ability to securely manage and share trusted service providers. Sponsorships are also allowed for communities and service providers. 
+Neighbour Approved charges communities (e.g., estates) a subscription fee for platform access. Communities value the ability to securely manage and share trusted service providers. Sponsorships are also allowed for communities and service providers.
 
 **What is your TAM (Total Addressable Market) (ZAR)?**\
 [Insert estimated market value here]
@@ -118,4 +118,3 @@ At-Risk Model
 
 **Please upload a video (max 2min) pitching your start-up:**\
 [Insert File Upload Placeholder]
-
