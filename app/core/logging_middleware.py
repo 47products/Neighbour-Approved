@@ -1,43 +1,103 @@
 """
-Logging middleware for FastAPI application.
+Logging middleware for the Neighbour Approved application.
 
 This module provides middleware components for logging HTTP requests and responses,
-ensuring comprehensive request tracking and monitoring capabilities.
+ensuring comprehensive request tracking and monitoring capabilities. It integrates
+with the application's middleware management system to provide standardized logging
+across all requests.
+
+The middleware captures key request metrics including:
+- Request timing
+- Status codes
+- Error tracking
+- Request context (path, method, client info)
+- Response size
+
+Example:
+    ```python
+    from app.core.middleware_management import MiddlewareRegistry
+    
+    registry = MiddlewareRegistry()
+    registry.register(
+        RequestLoggingMiddleware,
+        priority=MiddlewarePriority.FIRST,
+        config={"enable_request_logging": True}
+    )
+    ```
 """
 
 import time
 import traceback
-from typing import Callable
+from typing import List
 import uuid
-from fastapi import FastAPI, Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.middleware.base import RequestResponseEndpoint
 import structlog
 
+from app.core.middleware_management import (
+    BaseMiddleware,
+    MiddlewareConfig,
+    MiddlewareRegistry,
+    MiddlewarePriority,
+)
 from app.db.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
 
-def setup_logging_middleware(app: FastAPI) -> None:
-    """Configure logging middleware for the application."""
-    settings = get_settings()
-    if settings.ENABLE_REQUEST_LOGGING:
-        app.add_middleware(RequestLoggingMiddleware)
+class RequestLoggingConfig(MiddlewareConfig):
+    """Configuration for request logging middleware."""
+
+    skip_paths: List[str] = ["/health"]
+    include_headers: bool = False
+    include_query_params: bool = True
+    max_body_size: int = 1024
 
 
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware for logging HTTP requests and responses."""
+class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
+    """
+    Middleware for logging HTTP requests and responses.
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        """Process and log request/response cycle."""
-        # Skip logging for health check endpoints to reduce noise
-        if request.url.path.endswith("/health"):
+    This middleware component provides comprehensive logging of HTTP request/response
+    cycles, including timing, status codes, and error tracking. It supports
+    configuration options for controlling logging behavior and can be disabled for
+    specific endpoints.
+
+    Attributes:
+        app: FastAPI application instance
+        config: Configuration dictionary with logging options
+    """
+
+    config_class = RequestLoggingConfig
+
+    async def process(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """
+        Process and log request/response cycle.
+
+        This method implements request logging with timing and error tracking.
+        It can be configured to skip certain endpoints (e.g., health checks)
+        to reduce noise in logs.
+
+        Args:
+            request: FastAPI request instance
+            call_next: Async function to call the next middleware/endpoint
+
+        Returns:
+            Response: FastAPI response instance
+        """
+        # Skip logging for health check endpoints if configured
+        settings = get_settings()
+        if not settings.ENABLE_REQUEST_LOGGING or request.url.path.endswith("/health"):
             return await call_next(request)
 
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-        # Bind request context
-        request_logger = logger.bind(
+        # Create request-specific logger with context
+        request_logger = self._logger.bind(
             request_id=request_id,
             method=request.method,
             path=request.url.path,
@@ -46,10 +106,10 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             user_agent=request.headers.get("user-agent"),
         )
 
-        # Log request
+        # Log request start
         request_logger.info("http_request_started")
 
-        # Process request and measure timing
+        # Process request with timing
         start_time = time.time()
         try:
             response = await call_next(request)
@@ -70,7 +130,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration = time.time() - start_time
 
-            # Log failed request
+            # Log failed request with details
             request_logger.error(
                 "http_request_failed",
                 error=str(e),
@@ -79,3 +139,27 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 traceback=traceback.format_exc(),
             )
             raise
+
+
+def setup_logging_middleware(app: FastAPI) -> None:
+    """
+    Configure logging middleware for the application.
+
+    This function initializes and registers the logging middleware with the
+    application's middleware registry. It respects application settings for
+    enabling/disabling request logging.
+
+    Args:
+        app: FastAPI application instance
+    """
+    settings = get_settings()
+    registry = MiddlewareRegistry()
+
+    if settings.ENABLE_REQUEST_LOGGING:
+        registry.register(
+            RequestLoggingMiddleware,
+            priority=MiddlewarePriority.FIRST,
+            config={"enable_request_logging": True},
+        )
+
+    registry.apply_middlewares(app)
