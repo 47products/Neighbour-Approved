@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.services.phone_validator import validate_phone_number
+from app.services.phone_validation_service import validate_phone_number
 
 
 class ContactResponse(BaseModel):
