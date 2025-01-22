@@ -1,4 +1,3 @@
-# pylint: disable=too-many-ancestors
 """Database type definitions for SQLAlchemy models."""
 
 from datetime import datetime, timezone
