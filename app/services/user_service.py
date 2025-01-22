@@ -7,13 +7,14 @@ and user lifecycle operations. It ensures proper separation of concerns
 by encapsulating business rules and workflows separate from data access.
 """
 
-from datetime import datetime, UTC
-from typing import List, Optional, cast
+from datetime import datetime, UTC, timedelta
+from typing import List, Optional, Tuple, cast
+import bcrypt
 from pydantic import EmailStr
-import structlog
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
+from app.core.error_handling import AuthenticationError
 from app.services.base import BaseService
 from app.services.interfaces import IUserService
 from app.services.exceptions import (
@@ -462,3 +463,154 @@ class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
             raise BusinessRuleViolationError(
                 "Failed to complete post-verification workflow"
             ) from e
+
+    async def hash_password(self, password: str) -> str:
+        """Generate secure password hash using bcrypt.
+
+        Args:
+            password: Plain text password to hash
+
+        Returns:
+            str: Securely hashed password
+
+        Raises:
+            ValidationError: If password does not meet requirements
+        """
+        if not self._validate_password_strength(password):
+            raise ValidationError("Password does not meet security requirements")
+
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password.encode(), salt).decode()
+
+    def _validate_password_strength(self, password: str) -> bool:
+        """Validate password meets security requirements.
+
+        Password must:
+        - Be at least 8 characters long
+        - Contain at least one uppercase letter
+        - Contain at least one lowercase letter
+        - Contain at least one number
+        - Contain at least one special character
+
+        Args:
+            password: Password to validate
+
+        Returns:
+            bool: Whether password meets requirements
+        """
+        if len(password) < 8:
+            return False
+
+        has_upper = any(c.isupper() for c in password)
+        has_lower = any(c.islower() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() for c in password)
+
+        return all([has_upper, has_lower, has_digit, has_special])
+
+    async def verify_password(self, stored_hash: str, password: str) -> bool:
+        """Securely verify a password against stored hash.
+
+        Args:
+            stored_hash: Hashed password from database
+            password: Plain text password to verify
+
+        Returns:
+            bool: Whether password matches hash
+        """
+        return bcrypt.checkpw(password.encode(), stored_hash.encode())
+
+    async def authenticate_user(
+        self, email: EmailStr, password: str, track_login: bool = True
+    ) -> Tuple[User, bool]:
+        """Authenticate user with email and password.
+
+        This method implements the complete authentication workflow including
+        password verification, account status validation, and login tracking.
+
+        Args:
+            email: User's email address
+            password: Plain text password
+            track_login: Whether to record successful login
+
+        Returns:
+            Tuple[User, bool]: Authenticated user and whether this is first login
+
+        Raises:
+            AuthenticationError: If authentication fails
+            ValidationError: If input validation fails
+        """
+        try:
+            user = await self.repository.get_by_email(email)
+            if not user:
+                raise AuthenticationError("Invalid email or password")
+
+            if not user.is_active:
+                raise AuthenticationError("Account is deactivated")
+
+            if not await self.verify_password(user.password, password):
+                await self._handle_failed_login(user)
+                raise AuthenticationError("Invalid email or password")
+
+            is_first_login = user.last_login is None
+            if track_login:
+                await self._track_successful_login(user)
+
+            return user, is_first_login
+
+        except Exception as e:
+            self._logger.error(
+                "authentication_failed",
+                email=email,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise
+
+    async def _track_successful_login(self, user: User) -> None:
+        """Record successful login attempt.
+
+        Updates user's last login timestamp and resets any failed login tracking.
+
+        Args:
+            user: User who successfully logged in
+        """
+        user.last_login = datetime.now(UTC)
+        user.failed_login_attempts = 0
+        user.failed_login_lockout = None
+        await self.db.commit()
+
+        self._logger.info("login_successful", user_id=user.id, email=user.email)
+
+    async def _handle_failed_login(self, user: User) -> None:
+        """Handle failed login attempt.
+
+        Implements progressive lockout policy for failed attempts:
+        - First 3 failures: No lockout
+        - 4-6 failures: 15 minute lockout
+        - 7+ failures: 1 hour lockout
+
+        Args:
+            user: User who failed to log in
+        """
+        user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+
+        if user.failed_login_attempts >= 7:
+            lockout_duration = timedelta(hours=1)
+        elif user.failed_login_attempts >= 4:
+            lockout_duration = timedelta(minutes=15)
+        else:
+            lockout_duration = None
+
+        if lockout_duration:
+            user.failed_login_lockout = datetime.now(UTC) + lockout_duration
+
+        await self.db.commit()
+
+        self._logger.warning(
+            "login_failed",
+            user_id=user.id,
+            email=user.email,
+            attempts=user.failed_login_attempts,
+            lockout_duration=lockout_duration,
+        )
