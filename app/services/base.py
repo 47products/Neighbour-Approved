@@ -80,7 +80,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
     @abstractmethod
     def repository(self) -> IRepository:
         """Get the underlying repository instance."""
-        ...
 
     @abstractmethod
     async def create(self, data: CreateSchemaType) -> ModelType:
@@ -96,7 +95,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If business rules are violated
             ServiceException: If service operation fails
         """
-        ...
 
     @abstractmethod
     async def get(self, id: Any) -> Optional[ModelType]:
@@ -111,7 +109,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
         Raises:
             ServiceException: If service operation fails
         """
-        ...
 
     @abstractmethod
     async def get_multi(
@@ -134,7 +131,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
         Raises:
             ServiceException: If service operation fails
         """
-        ...
 
     @abstractmethod
     async def update(self, *, id: Any, data: UpdateSchemaType) -> Optional[ModelType]:
@@ -151,7 +147,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If business rules are violated
             ServiceException: If service operation fails
         """
-        ...
 
     @abstractmethod
     async def delete(self, id: Any) -> bool:
@@ -167,7 +162,6 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If deletion is not allowed
             ServiceException: If service operation fails
         """
-        ...
 
 
 class BaseService(
@@ -285,7 +279,6 @@ class BaseService(
             BusinessLogicError: If validation fails
         """
         # Override in derived classes to implement specific validation
-        pass
 
     async def pre_create(self, data: CreateSchemaType) -> CreateSchemaType:
         """Process data before creation.
@@ -306,7 +299,6 @@ class BaseService(
             record: Created record
         """
         # Override in derived classes to implement post-creation processing
-        pass
 
     async def get(self, id: Any) -> Optional[ModelType]:
         """Retrieve a record by ID.
@@ -349,7 +341,6 @@ class BaseService(
             HTTPException: If access is denied
         """
         # Override in derived classes to implement access control
-        pass
 
     async def get_multi(
         self,
@@ -478,7 +469,6 @@ class BaseService(
             BusinessLogicError: If validation fails
         """
         # Override in derived classes to implement validation
-        pass
 
     async def pre_update(self, id: Any, data: UpdateSchemaType) -> UpdateSchemaType:
         """Process data before update.
@@ -500,7 +490,6 @@ class BaseService(
             record: Updated record
         """
         # Override in derived classes to implement post-update processing
-        pass
 
     async def delete(self, id: Any) -> bool:
         """Delete a record.
@@ -559,7 +548,6 @@ class BaseService(
             BusinessLogicError: If deletion is not allowed
         """
         # Override in derived classes to implement deletion validation
-        pass
 
     async def pre_delete(self, id: Any) -> None:
         """Process before deletion.
@@ -568,7 +556,6 @@ class BaseService(
             id: Record identifier
         """
         # Override in derived classes to implement pre-deletion processing
-        pass
 
     async def post_delete(self, id: Any) -> None:
         """Process after deletion.
@@ -577,4 +564,3 @@ class BaseService(
             id: Record identifier
         """
         # Override in derived classes to implement post-deletion processing
-        pass

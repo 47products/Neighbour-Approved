@@ -295,3 +295,34 @@ class ConcurrencyError(ServiceError):
             status.HTTP_409_CONFLICT,
             details,
         )
+
+
+class RoleAssignmentError(ServiceError):
+    """Exception for role assignment failures.
+
+    Raised when a role assignment operation cannot be completed due to
+    business rule violations, such as incompatible role combinations or
+    permission hierarchy conflicts.
+
+    Args:
+        message: Description of the role assignment error
+        details: Optional additional context about the error
+    """
+
+    def __init__(
+        self,
+        message: str = "Role assignment failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize role assignment error.
+
+        Args:
+            message: Human-readable error description
+            details: Additional error context
+        """
+        super().__init__(
+            message,
+            "ROLE_ASSIGNMENT_ERROR",
+            status.HTTP_409_CONFLICT,
+            details,
+        )

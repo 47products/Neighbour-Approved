@@ -12,7 +12,6 @@ from typing import List, Optional, Tuple, cast
 import bcrypt
 from pydantic import EmailStr
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status
 
 from app.core.error_handling import AuthenticationError
 from app.services.base import BaseService
@@ -23,6 +22,7 @@ from app.services.exceptions import (
     AccessDeniedError,
     DuplicateResourceError,
     ResourceNotFoundError,
+    RoleAssignmentError,
 )
 from app.db.models.user_model import User
 from app.db.models.community_model import Community
@@ -437,7 +437,7 @@ class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
             if not any(role.name == "verified_user" for role in user.roles):
                 verified_role = (
                     await self.db.query(Role)
-                    .filter(Role.name == "verified_user", Role.is_active == True)
+                    .filter(Role.name == "verified_user", Role.is_active is True)
                     .first()
                 )
                 if verified_role:
@@ -613,4 +613,183 @@ class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
             email=user.email,
             attempts=user.failed_login_attempts,
             lockout_duration=lockout_duration,
+        )
+
+    async def get_user_roles(self, user_id: int) -> List[Role]:
+        """Retrieve all active roles assigned to a user.
+
+        This method returns only active roles, filtering out any inactive
+        or deprecated role assignments. It provides a current view of the
+        user's effective permissions.
+
+        Args:
+            user_id: User's unique identifier
+
+        Returns:
+            List[Role]: List of active roles assigned to user
+
+        Raises:
+            ResourceNotFoundError: If user does not exist
+        """
+        user = await self.get_user(user_id)
+        if not user:
+            raise ResourceNotFoundError(f"User {user_id} not found")
+
+        return [role for role in user.roles if role.is_active]
+
+    async def assign_roles(self, user_id: int, role_ids: List[int]) -> User:
+        """Assign multiple roles to a user.
+
+        This method handles bulk role assignment while enforcing role
+        compatibility rules and maintaining role hierarchy integrity.
+
+        Args:
+            user_id: User's unique identifier
+            role_ids: List of role IDs to assign
+
+        Returns:
+            User: Updated user instance with new roles
+
+        Raises:
+            RoleAssignmentError: If role assignment violates business rules
+            ValidationError: If any role ID is invalid
+        """
+        user = await self.get_user(user_id)
+        if not user:
+            raise ResourceNotFoundError(f"User {user_id} not found")
+
+        # Validate and retrieve all roles
+        roles = []
+        for role_id in role_ids:
+            role = await self.db.get(Role, role_id)
+            if not role or not role.is_active:
+                raise ValidationError(f"Invalid or inactive role: {role_id}")
+            roles.append(role)
+
+        # Check role compatibility
+        if not await self._validate_role_compatibility(user, roles):
+            raise RoleAssignmentError("Incompatible role combination")
+
+        # Perform role assignment
+        for role in roles:
+            if role not in user.roles:
+                user.roles.append(role)
+                self._logger.info(
+                    "role_assigned",
+                    user_id=user_id,
+                    role_id=role.id,
+                    role_name=role.name,
+                )
+
+        await self.db.commit()
+        return user
+
+    async def remove_roles(self, user_id: int, role_ids: List[int]) -> User:
+        """Remove multiple roles from a user.
+
+        This method handles bulk role removal while maintaining minimum
+        role requirements and system integrity.
+
+        Args:
+            user_id: User's unique identifier
+            role_ids: List of role IDs to remove
+
+        Returns:
+            User: Updated user instance
+
+        Raises:
+            BusinessRuleViolationError: If removal violates minimum role requirements
+        """
+        user = await self.get_user(user_id)
+        if not user:
+            raise ResourceNotFoundError(f"User {user_id} not found")
+
+        roles_to_remove = [role for role in user.roles if role.id in role_ids]
+
+        # Check minimum role requirements
+        remaining_roles = [role for role in user.roles if role.id not in role_ids]
+        if not await self._validate_minimum_roles(remaining_roles):
+            raise BusinessRuleViolationError(
+                "User must maintain at least one active role"
+            )
+
+        # Perform role removal
+        for role in roles_to_remove:
+            user.roles.remove(role)
+            self._logger.info(
+                "role_removed", user_id=user_id, role_id=role.id, role_name=role.name
+            )
+
+        await self.db.commit()
+        return user
+
+    async def _validate_role_compatibility(
+        self, user: User, new_roles: List[Role]
+    ) -> bool:
+        """Validate compatibility between existing and new roles.
+
+        This method enforces role combination rules, preventing invalid
+        or conflicting role assignments.
+
+        Args:
+            user: User receiving new roles
+            new_roles: Roles to be assigned
+
+        Returns:
+            bool: Whether role combination is valid
+        """
+        existing_role_names = {role.name for role in user.roles}
+        new_role_names = {role.name for role in new_roles}
+
+        # Example compatibility rules
+        incompatible_pairs = {
+            frozenset({"admin", "basic_user"}),
+            frozenset({"moderator", "restricted_user"}),
+        }
+
+        combined_roles = existing_role_names.union(new_role_names)
+        for role_pair in incompatible_pairs:
+            if len(role_pair.intersection(combined_roles)) > 1:
+                return False
+
+        return True
+
+    async def _validate_minimum_roles(self, roles: List[Role]) -> bool:
+        """Validate that role set meets minimum requirements.
+
+        This method ensures users maintain necessary system access
+        through appropriate role assignments.
+
+        Args:
+            roles: List of roles to validate
+
+        Returns:
+            bool: Whether role set meets requirements
+        """
+        active_roles = [role for role in roles if role.is_active]
+        if not active_roles:
+            return False
+
+        # Additional validation logic can be added here
+        return True
+
+    async def has_permission(self, user_id: int, permission: str) -> bool:
+        """Check if user has a specific permission through any role.
+
+        This method evaluates permission across all active roles
+        assigned to the user.
+
+        Args:
+            user_id: User's unique identifier
+            permission: Permission to check
+
+        Returns:
+            bool: Whether user has permission
+        """
+        user = await self.get_user(user_id)
+        if not user:
+            return False
+
+        return any(
+            role.has_permission(permission) for role in user.roles if role.is_active
         )

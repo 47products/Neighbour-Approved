@@ -38,39 +38,30 @@ class IUserService(Protocol):
 
     async def authenticate(self, email: EmailStr, password: str) -> Optional[User]:
         """Authenticate a user with email and password."""
-        ...
 
     async def create_user(self, data: UserCreate) -> User:
         """Create a new user with validation."""
-        ...
 
     async def get_user(self, user_id: int) -> Optional[User]:
         """Retrieve a user by ID."""
-        ...
 
     async def update_user(self, user_id: int, data: UserUpdate) -> Optional[User]:
         """Update user information."""
-        ...
 
     async def delete_user(self, user_id: int) -> bool:
         """Delete a user account."""
-        ...
 
     async def verify_email(self, user_id: int) -> bool:
         """Mark user's email as verified."""
-        ...
 
     async def assign_role(self, user_id: int, role_id: int) -> Optional[User]:
         """Assign a role to a user."""
-        ...
 
     async def remove_role(self, user_id: int, role_id: int) -> Optional[User]:
         """Remove a role from a user."""
-        ...
 
     async def get_user_communities(self, user_id: int) -> List[Community]:
         """Get communities associated with user."""
-        ...
 
 
 class ICommunityService(Protocol):
@@ -78,37 +69,29 @@ class ICommunityService(Protocol):
 
     async def create_community(self, data: CommunityCreate) -> Community:
         """Create a new community."""
-        ...
 
     async def get_community(self, community_id: int) -> Optional[Community]:
         """Retrieve a community by ID."""
-        ...
 
     async def update_community(
         self, community_id: int, data: CommunityUpdate
     ) -> Optional[Community]:
         """Update community information."""
-        ...
 
     async def delete_community(self, community_id: int) -> bool:
         """Delete a community."""
-        ...
 
     async def add_member(self, community_id: int, user_id: int) -> bool:
         """Add a user to the community."""
-        ...
 
     async def remove_member(self, community_id: int, user_id: int) -> bool:
         """Remove a user from the community."""
-        ...
 
     async def get_community_contacts(self, community_id: int) -> List[Contact]:
         """Get contacts associated with community."""
-        ...
 
     async def get_community_members(self, community_id: int) -> List[User]:
         """Get members of the community."""
-        ...
 
 
 class IContactService(Protocol):
@@ -116,39 +99,31 @@ class IContactService(Protocol):
 
     async def create_contact(self, data: ContactCreate) -> Contact:
         """Create a new contact."""
-        ...
 
     async def get_contact(self, contact_id: int) -> Optional[Contact]:
         """Retrieve a contact by ID."""
-        ...
 
     async def update_contact(
         self, contact_id: int, data: ContactUpdate
     ) -> Optional[Contact]:
         """Update contact information."""
-        ...
 
     async def delete_contact(self, contact_id: int) -> bool:
         """Delete a contact."""
-        ...
 
     async def add_service(self, contact_id: int, service_id: int) -> bool:
         """Add a service to contact's offerings."""
-        ...
 
     async def remove_service(self, contact_id: int, service_id: int) -> bool:
         """Remove a service from contact's offerings."""
-        ...
 
     async def get_contact_endorsements(
         self, contact_id: int
     ) -> List[ContactEndorsement]:
         """Get endorsements for a contact."""
-        ...
 
     async def verify_contact(self, contact_id: int, verified_by: int) -> bool:
         """Mark a contact as verified."""
-        ...
 
 
 class IEndorsementService(Protocol):
@@ -158,33 +133,27 @@ class IEndorsementService(Protocol):
         self, data: ContactEndorsementCreate
     ) -> ContactEndorsement:
         """Create a new endorsement."""
-        ...
 
     async def get_endorsement(
         self, endorsement_id: int
     ) -> Optional[ContactEndorsement]:
         """Retrieve an endorsement by ID."""
-        ...
 
     async def update_endorsement(
         self, endorsement_id: int, data: ContactEndorsementUpdate
     ) -> Optional[ContactEndorsement]:
         """Update endorsement information."""
-        ...
 
     async def delete_endorsement(self, endorsement_id: int) -> bool:
         """Delete an endorsement."""
-        ...
 
     async def verify_endorsement(self, endorsement_id: int, verified_by: int) -> bool:
         """Mark an endorsement as verified."""
-        ...
 
     async def get_community_endorsements(
         self, community_id: int
     ) -> List[ContactEndorsement]:
         """Get endorsements within a community."""
-        ...
 
 
 class IRoleService(Protocol):
@@ -197,11 +166,9 @@ class IRoleService(Protocol):
         description: Optional[str] = None,
     ) -> Role:
         """Create a new role."""
-        ...
 
     async def get_role(self, role_id: int) -> Optional[Role]:
         """Retrieve a role by ID."""
-        ...
 
     async def update_role(
         self,
@@ -210,15 +177,12 @@ class IRoleService(Protocol):
         description: Optional[str] = None,
     ) -> Optional[Role]:
         """Update role information."""
-        ...
 
     async def delete_role(self, role_id: int) -> bool:
         """Delete a role."""
-        ...
 
     async def get_role_users(self, role_id: int) -> List[User]:
         """Get users assigned to a role."""
-        ...
 
 
 class IServiceManagement(Protocol):
@@ -232,11 +196,9 @@ class IServiceManagement(Protocol):
         base_price: Optional[float] = None,
     ) -> Service:
         """Create a new service offering."""
-        ...
 
     async def get_service(self, service_id: int) -> Optional[Service]:
         """Retrieve a service by ID."""
-        ...
 
     async def update_service(
         self,
@@ -246,15 +208,12 @@ class IServiceManagement(Protocol):
         base_price: Optional[float] = None,
     ) -> Optional[Service]:
         """Update service information."""
-        ...
 
     async def delete_service(self, service_id: int) -> bool:
         """Delete a service."""
-        ...
 
     async def get_category_services(self, category_id: int) -> List[Service]:
         """Get services in a category."""
-        ...
 
 
 class IAuditService(Protocol):
@@ -269,7 +228,6 @@ class IAuditService(Protocol):
         details: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Log a user action."""
-        ...
 
     async def get_user_audit_log(
         self,
@@ -278,7 +236,6 @@ class IAuditService(Protocol):
         end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """Get audit log entries for a user."""
-        ...
 
     async def get_resource_audit_log(
         self,
@@ -288,4 +245,3 @@ class IAuditService(Protocol):
         end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """Get audit log entries for a resource."""
-        ...
