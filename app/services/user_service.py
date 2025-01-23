@@ -256,7 +256,8 @@ class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
             user_id: User's unique identifier
 
         Returns:
-            True if email was verified
+            bool: True if email was successfully verified or was already verified,
+                False if verification failed
 
         Raises:
             ResourceNotFoundError: If user not found
@@ -266,17 +267,33 @@ class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
             raise ResourceNotFoundError(f"User {user_id} not found")
 
         if user.email_verified:
+            self._logger.debug(
+                "email_already_verified",
+                user_id=user_id,
+                email=user.email,
+            )
+            return False
+
+        try:
+            user.email_verified = True
+            await self.db.commit()
+
+            self._logger.info(
+                "email_verified",
+                user_id=user_id,
+                email=user.email,
+            )
             return True
 
-        user.email_verified = True
-        await self.db.commit()
-
-        self._logger.info(
-            "email_verified",
-            user_id=user_id,
-            email=user.email,
-        )
-        return True
+        except Exception as e:
+            self._logger.error(
+                "email_verification_failed",
+                user_id=user_id,
+                email=user.email,
+                error=str(e),
+            )
+            await self.db.rollback()
+            return False
 
     async def assign_role(self, user_id: int, role_id: int) -> Optional[User]:
         """Assign a role to a user.
