@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.core.error_handling import AuthenticationError
 from app.services.base import BaseService
-from app.services.interfaces import IUserService
-from app.services.exceptions import (
+from app.services.service_interfaces import IUserService
+from app.services.service_exceptions import (
     BusinessRuleViolationError,
     ValidationError,
     AccessDeniedError,

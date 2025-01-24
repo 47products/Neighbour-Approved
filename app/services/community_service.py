@@ -2,27 +2,35 @@
 Community service implementation module.
 
 This module implements the core business logic for community management, including
-membership handling, privacy controls, and relationship management between communities.
-It ensures proper separation of concerns by encapsulating business rules separate
-from data access.
+relationship handling, role management, and ownership transfers. It ensures proper
+separation of concerns by encapsulating business rules separate from data access.
+
+The module provides comprehensive handling of:
+- Community relationships with privacy compatibility checks
+- Role assignments and hierarchies
+- Ownership transfers with validation
+- Audit logging and error tracking
 """
 
-from typing import List, Optional, Dict, Any
+from datetime import datetime, UTC
+from typing import Dict, List, Optional, Set, Tuple, Any
 from sqlalchemy.orm import Session
 import structlog
 
 from app.services.base import BaseService
-from app.services.interfaces import ICommunityService
-from app.services.exceptions import (
+from app.services.service_interfaces import ICommunityService
+from app.services.service_exceptions import (
     ValidationError,
     AccessDeniedError,
     ResourceNotFoundError,
     BusinessRuleViolationError,
     QuotaExceededError,
+    RoleAssignmentError,
+    StateError,
 )
 from app.db.models.community_model import Community, PrivacyLevel
 from app.db.models.user_model import User
-from app.db.models.contact_model import Contact
+from app.db.models.community_member_model import CommunityMember
 from app.db.repositories.community_repository import CommunityRepository
 from app.api.v1.schemas.community_schema import CommunityCreate, CommunityUpdate
 
@@ -33,22 +41,33 @@ class CommunityService(
     """
     Service for managing community-related operations and business logic.
 
-    This service implements community management operations including membership
-    control, privacy settings, and community relationships. It encapsulates all
-    community-related business rules and validation logic.
+    This service implements comprehensive community management operations including
+    membership control, relationship management, role assignments, and ownership
+    transfers. It encapsulates all community-related business rules and validation
+    logic.
 
     Attributes:
-        MAX_MEMBERS_FREE: Maximum members for free communities
-        MAX_RELATIONSHIPS: Maximum number of related communities
-        RESTRICTED_NAMES: Names not allowed for communities
+        MAX_MEMBERS_FREE (int): Maximum members for free communities
+        MAX_RELATIONSHIPS (int): Maximum number of related communities
+        RESTRICTED_NAMES (set): Names not allowed for communities
+        VALID_ROLES (set): Valid community member roles
+        ROLE_HIERARCHY (dict): Role hierarchy definitions
     """
 
     MAX_MEMBERS_FREE = 50
     MAX_RELATIONSHIPS = 10
     RESTRICTED_NAMES = {"admin", "system", "support", "test"}
+    VALID_ROLES = {"owner", "admin", "moderator", "member"}
+    ROLE_HIERARCHY = {
+        "owner": ["admin", "moderator", "member"],
+        "admin": ["moderator", "member"],
+        "moderator": ["member"],
+        "member": [],
+    }
 
     def __init__(self, db: Session):
-        """Initialize the community service.
+        """
+        Initialize the community service.
 
         Args:
             db: Database session for repository operations
@@ -59,137 +78,374 @@ class CommunityService(
             logger_name="CommunityService",
         )
 
-    async def create_community(self, data: CommunityCreate) -> Community:
-        """Create a new community with validation.
-
-        Args:
-            data: Community creation data
-
-        Returns:
-            Created community instance
-
-        Raises:
-            ValidationError: If validation fails
-            QuotaExceededError: If user has reached community limit
+    async def transfer_ownership(
+        self,
+        community_id: int,
+        new_owner_id: int,
+        current_owner_id: int,
+    ) -> Community:
         """
-        if data.name.lower() in self.RESTRICTED_NAMES:
-            raise ValidationError(f"Name '{data.name}' is not allowed")
+        Transfer ownership of a community to a new user.
 
-        # Check if owner has reached community limit
-        owner_communities = await self._get_user_owned_communities(data.owner_id)
-        if len(owner_communities) >= await self._get_user_community_limit(
-            data.owner_id
-        ):
-            raise QuotaExceededError("User has reached maximum number of communities")
-
-        return await self.create(data)
-
-    async def validate_create(self, data: CommunityCreate) -> None:
-        """Validate community creation data.
-
-        Args:
-            data: Creation data to validate
-
-        Raises:
-            ValidationError: If validation fails
-            BusinessRuleViolationError: If business rules are violated
-        """
-        if len(data.name) < 3:
-            raise ValidationError("Community name must be at least 3 characters")
-
-        if data.privacy_level not in {level.value for level in PrivacyLevel}:
-            raise ValidationError(f"Invalid privacy level: {data.privacy_level}")
-
-        await super().validate_create(data)
-
-    async def update_community(
-        self, community_id: int, data: CommunityUpdate
-    ) -> Optional[Community]:
-        """Update community information.
+        This method implements the complete ownership transfer workflow,
+        including validation, role updates, and audit logging.
 
         Args:
             community_id: Community's unique identifier
-            data: Update data
+            new_owner_id: User ID of the new owner
+            current_owner_id: User ID of the current owner
 
         Returns:
             Updated community instance
 
         Raises:
-            ResourceNotFoundError: If community not found
-            ValidationError: If validation fails
-            BusinessRuleViolationError: If update violates business rules
+            ResourceNotFoundError: If community or users not found
+            AccessDeniedError: If transfer is not authorized
+            BusinessRuleViolationError: If transfer violates rules
+            StateError: If community is in invalid state for transfer
         """
         community = await self.get_community(community_id)
         if not community:
             raise ResourceNotFoundError(f"Community {community_id} not found")
 
-        if data.privacy_level and data.privacy_level != community.privacy_level:
-            await self._validate_privacy_change(community, data.privacy_level)
+        if community.owner_id != current_owner_id:
+            raise AccessDeniedError("Only the current owner can transfer ownership")
 
-        return await self.update(id=community_id, data=data)
+        if not community.is_active:
+            raise StateError("Cannot transfer ownership of inactive community")
 
-    async def get_community(self, community_id: int) -> Optional[Community]:
-        """Retrieve a community by its identifier.
+        new_owner = await self.db.get(User, new_owner_id)
+        if not new_owner:
+            raise ResourceNotFoundError(f"New owner {new_owner_id} not found")
 
-        This method fetches a community and validates basic access permissions.
+        try:
+            # Validate transfer
+            await self._validate_ownership_transfer(community, new_owner)
 
-        Args:
-            community_id: Community's unique identifier
+            # Store old owner info for role updates
+            old_owner_id = community.owner_id
 
-        Returns:
-            Optional[Community]: The community if found and accessible, None otherwise
+            # Update ownership
+            community.owner_id = new_owner_id
 
-        Raises:
-            ResourceNotFoundError: If community is not found
-            AccessDeniedError: If community access is restricted
-        """
-        community = await self.get(community_id)
-        if not community:
-            raise ResourceNotFoundError(f"Community {community_id} not found")
-
-        if not await self.can_access(community):
-            raise AccessDeniedError("Access to this community is restricted")
-
-        return community
-
-    async def _validate_privacy_change(
-        self, community: Community, new_level: PrivacyLevel
-    ) -> None:
-        """Validate privacy level change.
-
-        Args:
-            community: Community to update
-            new_level: New privacy level
-
-        Raises:
-            BusinessRuleViolationError: If change violates rules
-        """
-        if (
-            new_level == PrivacyLevel.PRIVATE
-            and len(community.members) > self.MAX_MEMBERS_FREE
-        ):
-            raise BusinessRuleViolationError(
-                "Cannot change to private with more than "
-                f"{self.MAX_MEMBERS_FREE} members"
+            # Update member roles and associations
+            await self._update_roles_after_transfer(
+                community, old_owner_id, new_owner_id
             )
 
-        # Add additional privacy change validation rules here
+            await self.db.commit()
 
-    async def add_member(self, community_id: int, user_id: int) -> bool:
-        """Add a user to the community.
+            self._logger.info(
+                "ownership_transferred",
+                community_id=community_id,
+                old_owner_id=old_owner_id,
+                new_owner_id=new_owner_id,
+            )
+
+            return community
+
+        except Exception as e:
+            await self.db.rollback()
+            self._logger.error(
+                "ownership_transfer_failed",
+                community_id=community_id,
+                new_owner_id=new_owner_id,
+                error=str(e),
+            )
+            raise
+
+    async def _validate_ownership_transfer(
+        self,
+        community: Community,
+        new_owner: User,
+    ) -> None:
+        """
+        Validate community ownership transfer against business rules.
+
+        Args:
+            community: Community being transferred
+            new_owner: Prospective new owner
+
+        Raises:
+            BusinessRuleViolationError: If transfer violates rules
+            ValidationError: If validation fails
+        """
+        if not new_owner.is_active:
+            raise BusinessRuleViolationError("New owner account must be active")
+
+        if not new_owner.email_verified:
+            raise BusinessRuleViolationError(
+                "New owner must have a verified email address"
+            )
+
+        # Check ownership limits
+        owned_communities = await self._get_user_owned_communities(new_owner.id)
+        if len(owned_communities) >= await self._get_user_community_limit(new_owner.id):
+            raise BusinessRuleViolationError(
+                "New owner has reached maximum number of owned communities"
+            )
+
+        # Check privacy level compatibility
+        if community.privacy_level == PrivacyLevel.PRIVATE and not any(
+            role.name == "premium_user" for role in new_owner.roles if role.is_active
+        ):
+            raise BusinessRuleViolationError(
+                "Private communities require premium membership"
+            )
+
+        # Validate existing role assignments
+        member_role = await self._get_member_role(community, new_owner)
+        if member_role and member_role not in {"admin", "moderator"}:
+            raise ValidationError(
+                "New owner must be an admin or moderator before transfer"
+            )
+
+    async def _update_roles_after_transfer(
+        self,
+        community: Community,
+        old_owner_id: int,
+        new_owner_id: int,
+    ) -> None:
+        """
+        Update roles and permissions after ownership transfer.
+
+        Args:
+            community: Community being transferred
+            old_owner_id: Previous owner's user ID
+            new_owner_id: New owner's user ID
+
+        Raises:
+            StateError: If role updates fail
+        """
+        try:
+            # Update old owner's role to admin
+            old_owner_member = await self._get_community_member(
+                community, User(id=old_owner_id)
+            )
+            if old_owner_member:
+                old_owner_member.role = "admin"
+                old_owner_member.role_assigned_at = datetime.now(UTC)
+                old_owner_member.role_assigned_by = new_owner_id
+
+            # Update new owner's role
+            new_owner_member = await self._get_community_member(
+                community, User(id=new_owner_id)
+            )
+            if new_owner_member:
+                new_owner_member.role = "owner"
+                new_owner_member.role_assigned_at = datetime.now(UTC)
+            else:
+                # Create new owner membership if not exists
+                new_owner_member = CommunityMember(
+                    community_id=community.id,
+                    user_id=new_owner_id,
+                    role="owner",
+                    role_assigned_at=datetime.now(UTC),
+                    is_active=True,
+                )
+                self.db.add(new_owner_member)
+
+            await self.db.commit()
+
+        except Exception as e:
+            self._logger.error(
+                "role_update_failed",
+                community_id=community.id,
+                old_owner_id=old_owner_id,
+                new_owner_id=new_owner_id,
+                error=str(e),
+            )
+            raise StateError("Failed to update roles after transfer") from e
+
+    async def manage_community_relationships(
+        self,
+        community_id: int,
+        related_community_id: int,
+        action: str,
+    ) -> bool:
+        """
+        Manage relationships between communities.
+
+        This method handles the creation and management of bidirectional
+        relationships between communities, including validation of relationship
+        rules and maintenance of relationship integrity.
+
+        Args:
+            community_id: ID of the primary community
+            related_community_id: ID of the community to relate to
+            action: Relationship action ("add" or "remove")
+
+        Returns:
+            bool: True if relationship was successfully managed
+
+        Raises:
+            ResourceNotFoundError: If either community is not found
+            ValidationError: If relationship action is invalid
+            BusinessRuleViolationError: If relationship violates rules
+            QuotaExceededError: If relationship limit is exceeded
+        """
+        community = await self.get_community(community_id)
+        related_community = await self.get_community(related_community_id)
+
+        if not community or not related_community:
+            raise ResourceNotFoundError("One or both communities not found")
+
+        if action not in {"add", "remove"}:
+            raise ValidationError(f"Invalid relationship action: {action}")
+
+        try:
+            if action == "add":
+                await self._add_community_relationship(community, related_community)
+            else:
+                await self._remove_community_relationship(community, related_community)
+
+            await self.db.commit()
+            return True
+
+        except Exception as e:
+            await self.db.rollback()
+            self._logger.error(
+                "relationship_management_failed",
+                community_id=community_id,
+                related_community_id=related_community_id,
+                action=action,
+                error=str(e),
+            )
+            raise
+
+    async def _add_community_relationship(
+        self,
+        community: Community,
+        related_community: Community,
+    ) -> None:
+        """
+        Add a bidirectional relationship between communities.
+
+        Args:
+            community: Primary community
+            related_community: Community to relate to
+
+        Raises:
+            BusinessRuleViolationError: If relationship cannot be created
+            QuotaExceededError: If relationship limit reached
+        """
+        if related_community in community.related_communities:
+            return
+
+        if len(community.related_communities) >= self.MAX_RELATIONSHIPS:
+            raise QuotaExceededError(
+                f"Community has reached maximum relationships ({self.MAX_RELATIONSHIPS})"
+            )
+
+        await self._validate_relationship_rules(community, related_community)
+
+        # Create bidirectional relationship
+        community.related_communities.append(related_community)
+        related_community.related_communities.append(community)
+
+        self._logger.info(
+            "relationship_added",
+            community_id=community.id,
+            related_community_id=related_community.id,
+        )
+
+    async def _validate_relationship_rules(
+        self,
+        community: Community,
+        related_community: Community,
+    ) -> None:
+        """
+        Validate rules for community relationships.
+
+        Args:
+            community: Primary community
+            related_community: Community to relate to
+
+        Raises:
+            BusinessRuleViolationError: If relationship violates rules
+        """
+        # Prevent self-relationships
+        if community.id == related_community.id:
+            raise BusinessRuleViolationError("Community cannot relate to itself")
+
+        # Check privacy level compatibility
+        if community.privacy_level == PrivacyLevel.PRIVATE:
+            if related_community.privacy_level == PrivacyLevel.PUBLIC:
+                raise BusinessRuleViolationError(
+                    "Private communities cannot relate to public communities"
+                )
+
+        # Check for circular relationships
+        if await self._would_create_circular_relationship(community, related_community):
+            raise BusinessRuleViolationError(
+                "Relationship would create circular reference"
+            )
+
+        # Validate inherited relationships
+        parent_relationships = await self._get_inherited_relationships(community)
+        if related_community in parent_relationships:
+            raise BusinessRuleViolationError(
+                "Cannot create explicit relationship with inherited community"
+            )
+
+    async def _would_create_circular_relationship(
+        self,
+        community: Community,
+        related_community: Community,
+    ) -> bool:
+        """
+        Check if adding a relationship would create a circular reference.
+
+        Args:
+            community: Primary community
+            related_community: Community to relate to
+
+        Returns:
+            bool: Whether relationship would create circular reference
+        """
+        visited: Set[int] = set()
+
+        def check_circular(current: Community) -> bool:
+            if current.id in visited:
+                return True
+            visited.add(current.id)
+            for related in current.related_communities:
+                if check_circular(related):
+                    return True
+            visited.remove(current.id)
+            return False
+
+    async def manage_membership(
+        self,
+        community_id: int,
+        user_id: int,
+        action: str,
+        *,
+        inviter_id: Optional[int] = None,
+        role: str = "member",
+    ) -> bool:
+        """
+        Manage community membership operations.
+
+        This method handles all membership-related operations including invitations,
+        approvals, and membership status changes. It enforces membership limits and
+        privacy rules.
 
         Args:
             community_id: Community's unique identifier
-            user_id: User to add
+            user_id: User ID to manage
+            action: Membership action ("invite", "approve", "reject", "leave")
+            inviter_id: Optional ID of user initiating invitation
+            role: Role to assign (defaults to "member")
 
         Returns:
-            bool: True if user was added or is already a member,
-                False if the operation failed
+            bool: True if operation was successful
 
         Raises:
-            ResourceNotFoundError: If community or user not found
-            AccessDeniedError: If user cannot join
-            QuotaExceededError: If community at capacity
+            ValidationError: If action is invalid
+            BusinessRuleViolationError: If operation violates rules
+            QuotaExceededError: If member limit reached
+            AccessDeniedError: If operation not permitted
         """
         community = await self.get_community(community_id)
         if not community:
@@ -199,137 +455,278 @@ class CommunityService(
         if not user:
             raise ResourceNotFoundError(f"User {user_id} not found")
 
-        if user in community.members:
-            return True
-
         try:
-            if not await self._can_join_community(user, community):
-                raise AccessDeniedError("User cannot join this community")
+            # Validate action
+            if action not in {"invite", "approve", "reject", "leave"}:
+                raise ValidationError(f"Invalid membership action: {action}")
 
-            if len(community.members) >= await self._get_community_member_limit(
-                community
-            ):
-                raise QuotaExceededError(
-                    "Community has reached maximum member capacity"
+            # Check member limits for new members
+            if action in {"invite", "approve"}:
+                await self._check_member_limits(community)
+
+            # Process based on privacy level and action
+            if community.privacy_level == PrivacyLevel.INVITATION_ONLY:
+                return await self._handle_invitation_only_membership(
+                    community, user, action, inviter_id, role
+                )
+            elif community.privacy_level == PrivacyLevel.PRIVATE:
+                return await self._handle_private_membership(
+                    community, user, action, role
+                )
+            else:  # PUBLIC
+                return await self._handle_public_membership(
+                    community, user, action, role
                 )
 
-            community.add_member(user)
+        except Exception as e:
+            self._logger.error(
+                "membership_management_failed",
+                community_id=community_id,
+                user_id=user_id,
+                action=action,
+                error=str(e),
+            )
+            raise
+
+    async def _check_member_limits(self, community: Community) -> None:
+        """
+        Check if community can accept new members.
+
+        Args:
+            community: Community to check
+
+        Raises:
+            QuotaExceededError: If member limit reached
+        """
+        # Get effective member limit
+        member_limit = await self._get_community_member_limit(community)
+        if community.total_count >= member_limit:
+            raise QuotaExceededError(
+                f"Community has reached member limit of {member_limit}"
+            )
+
+    async def _process_invitation(
+        self,
+        community: Community,
+        user: User,
+        inviter_id: Optional[int],
+        role: str,
+    ) -> bool:
+        """Process a new member invitation."""
+        if not inviter_id:
+            raise ValidationError("Inviter ID required for invitations")
+
+        inviter = await self.db.get(User, inviter_id)
+        if not inviter:
+            raise ResourceNotFoundError(f"Inviter {inviter_id} not found")
+
+        await self._validate_inviter_permission(community, inviter)
+
+        member = CommunityMember(
+            community_id=community.id,
+            user_id=user.id,
+            role=role,
+            is_active=False,
+            role_assigned_by=inviter_id,
+        )
+        self.db.add(member)
+        await self.db.commit()
+
+        self._logger.info(
+            "member_invited",
+            community_id=community.id,
+            user_id=user.id,
+            inviter_id=inviter_id,
+        )
+        return True
+
+    async def _validate_inviter_permission(
+        self, community: Community, inviter: User
+    ) -> None:
+        """Validate if user has permission to invite members."""
+        inviter_member = await self._get_community_member(community, inviter)
+        if not inviter_member or inviter_member.role not in {
+            "owner",
+            "admin",
+            "moderator",
+        }:
+            raise AccessDeniedError("Insufficient permission to invite members")
+
+    async def _process_invitation_response(
+        self,
+        community: Community,
+        user: User,
+        action: str,
+    ) -> bool:
+        """Process an invitation approval or rejection."""
+        member = await self._get_community_member(community, user)
+        if not member or member.is_active:
+            raise BusinessRuleViolationError("No pending invitation found")
+
+        if action == "approve":
+            await self._activate_membership(member, community)
+        else:  # reject
+            self.db.delete(member)
+
+        await self.db.commit()
+
+        self._logger.info(
+            f"invitation_{action}ed",
+            community_id=community.id,
+            user_id=user.id,
+        )
+        return True
+
+    async def _activate_membership(
+        self,
+        member: CommunityMember,
+        community: Community,
+    ) -> None:
+        """Activate a pending membership."""
+        member.is_active = True
+        member.role_assigned_at = datetime.now(UTC)
+        community.total_count += 1
+        community.active_count += 1
+
+    async def _handle_membership_by_privacy(
+        self,
+        community: Community,
+        user: User,
+        action: str,
+        inviter_id: Optional[int] = None,
+        role: str = "member",
+    ) -> bool:
+        """Handle membership based on community privacy level."""
+        if action == "leave":
+            return await self._handle_member_leave(community, user)
+
+        if (
+            action == "invite"
+            and community.privacy_level == PrivacyLevel.INVITATION_ONLY
+        ):
+            return await self._process_invitation(community, user, inviter_id, role)
+
+        if (
+            action in {"approve", "reject"}
+            and community.privacy_level == PrivacyLevel.INVITATION_ONLY
+        ):
+            return await self._process_invitation_response(community, user, action)
+
+        if action == "approve":
+            # Verify premium requirement for private communities
+            if community.privacy_level == PrivacyLevel.PRIVATE and not any(
+                role.name == "premium_user" for role in user.roles if role.is_active
+            ):
+                raise BusinessRuleViolationError(
+                    "Private communities require premium membership"
+                )
+
+            member = CommunityMember(
+                community_id=community.id,
+                user_id=user.id,
+                role=role,
+                is_active=True,
+                role_assigned_at=datetime.now(UTC),
+            )
+            self.db.add(member)
+            community.total_count += 1
+            community.active_count += 1
             await self.db.commit()
 
             self._logger.info(
                 "member_added",
-                community_id=community_id,
-                user_id=user_id,
-                member_count=len(community.members),
+                community_id=community.id,
+                user_id=user.id,
+                role=role,
             )
             return True
-        except (AccessDeniedError, QuotaExceededError) as e:
-            self._logger.warning(
-                "member_add_failed",
-                community_id=community_id,
-                user_id=user_id,
-                error=str(e),
-            )
-            return False
 
-    async def remove_member(self, community_id: int, user_id: int) -> bool:
-        """Remove a user from the community.
+        return False
+
+    async def _handle_member_leave(
+        self,
+        community: Community,
+        user: User,
+    ) -> bool:
+        """
+        Handle member leaving a community.
 
         Args:
-            community_id: Community's unique identifier
-            user_id: User to remove
+            community: Community being left
+            user: Departing user
 
         Returns:
-            True if user was removed
+            bool: True if leave successful
 
         Raises:
-            ResourceNotFoundError: If community or user not found
-            BusinessRuleViolationError: If user cannot be removed
+            BusinessRuleViolationError: If leave not allowed
         """
-        community = await self.get_community(community_id)
-        if not community:
-            raise ResourceNotFoundError(f"Community {community_id} not found")
-
-        user = await self.db.get(User, user_id)
-        if not user:
-            raise ResourceNotFoundError(f"User {user_id} not found")
-
-        if user.id == community.owner_id:
-            raise BusinessRuleViolationError("Cannot remove community owner")
-
-        if user not in community.members:
+        member = await self._get_community_member(community, user)
+        if not member or not member.is_active:
             return False
 
-        community.remove_member(user)
+        if member.role == "owner":
+            raise BusinessRuleViolationError("Owner cannot leave community")
+
+        member.is_active = False
+        community.active_count -= 1
         await self.db.commit()
 
         self._logger.info(
-            "member_removed",
-            community_id=community_id,
-            user_id=user_id,
-            member_count=len(community.members),
+            "member_left",
+            community_id=community.id,
+            user_id=user.id,
         )
         return True
 
-    async def get_community_contacts(self, community_id: int) -> List[Contact]:
-        """Get contacts associated with community.
+    async def _get_community_member_limit(self, community: Community) -> int:
+        """
+        Get effective member limit for community.
+
+        This method determines the maximum allowed members based on
+        community settings and subscription tier.
 
         Args:
-            community_id: Community's unique identifier
+            community: Community to check
 
         Returns:
-            List of community contacts
-
-        Raises:
-            ResourceNotFoundError: If community not found
+            int: Maximum allowed members
         """
-        community = await self.get_community(community_id)
-        if not community:
-            raise ResourceNotFoundError(f"Community {community_id} not found")
+        # Check for premium features
+        owner = await self.db.get(User, community.owner_id)
+        if owner and any(
+            role.name == "premium_user" for role in owner.roles if role.is_active
+        ):
+            return 500  # Premium limit
+        return self.MAX_MEMBERS_FREE
 
-        return [contact for contact in community.contacts if contact.is_active]
-
-    async def get_community_members(self, community_id: int) -> List[User]:
-        """Get members of the community.
-
-        Args:
-            community_id: Community's unique identifier
-
-        Returns:
-            List of community members
-
-        Raises:
-            ResourceNotFoundError: If community not found
-        """
-        community = await self.get_community(community_id)
-        if not community:
-            raise ResourceNotFoundError(f"Community {community_id} not found")
-
-        return [member for member in community.members if member.is_active]
-
-    async def manage_membership(
-        self, community_id: int, user_id: int, role: str, action: str
+    async def manage_member_roles(
+        self,
+        community_id: int,
+        user_id: int,
+        role: str,
+        assigned_by: Optional[int] = None,
     ) -> bool:
-        """Manage community membership with role assignment.
+        """
+        Manage member roles within a community.
 
-        This method provides comprehensive membership management including role
-        assignment and status tracking. It handles all membership state transitions
-        and ensures proper validation of operations.
+        This method handles role assignment and updates for community members,
+        including validation of role assignments and proper audit logging.
 
         Args:
             community_id: Community's unique identifier
-            user_id: User's unique identifier
-            role: Role to assign to the member
-            action: Membership action to perform ('add', 'update', 'remove')
+            user_id: User receiving the role
+            role: Role to assign
+            assigned_by: ID of user making the assignment
 
         Returns:
-            bool: True if operation was successful, False otherwise
+            bool: True if role was successfully managed
 
         Raises:
             ResourceNotFoundError: If community or user not found
-            AccessDeniedError: If operation is not permitted
-            ValidationError: If role or action is invalid
-            BusinessRuleViolationError: If operation violates membership rules
+            ValidationError: If role is invalid
+            BusinessRuleViolationError: If role assignment violates rules
+            RoleAssignmentError: If role assignment fails
         """
         community = await self.get_community(community_id)
         if not community:
@@ -340,434 +737,407 @@ class CommunityService(
             raise ResourceNotFoundError(f"User {user_id} not found")
 
         try:
-            # Validate the action and role
-            await self._validate_membership_operation(community, user, role, action)
+            # Validate role assignment
+            if role not in self.VALID_ROLES:
+                raise ValidationError(f"Invalid role: {role}")
 
-            # Perform the membership operation
-            if action == "add":
-                return await self._add_member_with_role(community, user, role)
-            elif action == "update":
-                return await self._update_member_role(community, user, role)
-            elif action == "remove":
-                return await self._remove_member_with_cleanup(community, user)
+            # Validate assignment permissions
+            if assigned_by:
+                assigner = await self.db.get(User, assigned_by)
+                if not assigner:
+                    raise ResourceNotFoundError(
+                        f"Assigning user {assigned_by} not found"
+                    )
+                await self._validate_role_assignment_permission(
+                    community, assigner, role
+                )
 
-            raise ValidationError(f"Invalid membership action: {action}")
+            # Get or create member association
+            member = await self._get_community_member(community, user)
+            if not member:
+                # Create new member association
+                member = CommunityMember(
+                    community_id=community.id,
+                    user_id=user.id,
+                    role=role,
+                    role_assigned_at=datetime.now(UTC),
+                    role_assigned_by=assigned_by,
+                    is_active=True,
+                )
+                self.db.add(member)
+            else:
+                # Update existing member's role
+                member.role = role
+                member.role_assigned_at = datetime.now(UTC)
+                member.role_assigned_by = assigned_by
 
-        except Exception as e:
-            self._logger.error(
-                "membership_operation_failed",
-                community_id=community_id,
-                user_id=user_id,
-                role=role,
-                action=action,
-                error=str(e),
-            )
-            await self.db.rollback()
-            return False
-
-    async def _assign_member_role(
-        self, community: Community, user: User, role: str
-    ) -> None:
-        """Assign a role to a community member.
-
-        This method handles the assignment of roles within a community context,
-        including necessary permission checks and state updates.
-
-        Args:
-            community: Target community
-            user: User to assign role to
-            role: Role to assign
-
-        Raises:
-            ValidationError: If role assignment is invalid
-            BusinessRuleViolationError: If assignment violates community rules
-        """
-        # Validate role assignment permissions
-        if not await self._can_manage_roles(community, user):
-            raise BusinessRuleViolationError("Insufficient permissions to manage roles")
-
-        try:
-            # Update user's community role
-            community_member = await self._get_community_member(community, user)
-            if not community_member:
-                raise BusinessRuleViolationError("User is not a community member")
-
-            community_member.role = role
             await self.db.commit()
 
             self._logger.info(
-                "role_assigned",
-                community_id=community.id,
-                user_id=user.id,
+                "member_role_managed",
+                community_id=community_id,
+                user_id=user_id,
                 role=role,
+                assigned_by=assigned_by,
+                action="created" if not member else "updated",
             )
+            return True
+
         except Exception as e:
+            await self.db.rollback()
             self._logger.error(
-                "role_assignment_failed",
-                community_id=community.id,
-                user_id=user.id,
+                "member_role_management_failed",
+                community_id=community_id,
+                user_id=user_id,
                 role=role,
                 error=str(e),
             )
-            await self.db.rollback()
-            raise
+            raise RoleAssignmentError(f"Failed to manage role: {str(e)}")
 
-    async def _get_member_role(self, community: Community, user: User) -> Optional[str]:
-        """Get a member's current role in the community.
-
-        Args:
-            community: Target community
-            user: User to check
-
-        Returns:
-            Optional[str]: User's current role or None if not a member
-        """
-        community_member = await self._get_community_member(community, user)
-        return community_member.role if community_member else None
-
-    async def _validate_membership_operation(
-        self, community: Community, user: User, role: str, action: str
+    async def _validate_role_assignment_permission(
+        self,
+        community: Community,
+        assigner: User,
+        role: str,
     ) -> None:
-        """Validate membership operation against business rules.
-
-        Args:
-            community: Target community
-            user: User to perform operation on
-            role: Role to assign
-            action: Operation to perform
-
-        Raises:
-            ValidationError: If operation parameters are invalid
-            BusinessRuleViolationError: If operation violates rules
         """
-        valid_actions = {"add", "update", "remove"}
-        if action not in valid_actions:
-            raise ValidationError(f"Invalid action: {action}")
-
-        if action in {"add", "update"}:
-            await self._validate_role_assignment(community, user, role)
-
-        if action == "add" and user in community.members:
-            raise BusinessRuleViolationError("User is already a member")
-
-        if action != "add" and user not in community.members:
-            raise BusinessRuleViolationError("User is not a member")
-
-    async def _validate_role_assignment(
-        self, community: Community, user: User, role: str
-    ) -> None:
-        """Validate role assignment for community membership.
+        Validate if user has permission to assign a role.
 
         Args:
             community: Target community
-            user: User to assign role to
+            assigner: User attempting to assign role
             role: Role to assign
 
         Raises:
-            ValidationError: If role is invalid
-            BusinessRuleViolationError: If assignment violates rules
+            AccessDeniedError: If user cannot assign role
+            BusinessRuleViolationError: If role assignment violates rules
         """
-        valid_roles = {"admin", "moderator", "member"}
-        if role not in valid_roles:
-            raise ValidationError(f"Invalid role: {role}")
+        if assigner.id == community.owner_id:
+            return
 
-        # Check if user has necessary permissions for role
-        if role == "admin" and not user.has_permission("community_admin"):
-            raise BusinessRuleViolationError("User cannot be assigned admin role")
+        assigner_member = await self._get_community_member(community, assigner)
+        if not assigner_member:
+            raise AccessDeniedError("Assigner is not a community member")
 
-    async def _add_member_with_role(
-        self, community: Community, user: User, role: str
-    ) -> bool:
-        """Add a new member with specified role.
+        assigner_role = assigner_member.role
+        if assigner_role not in self.ROLE_HIERARCHY:
+            raise AccessDeniedError("Invalid assigner role")
+
+        # Check if assigner can assign this role
+        assignable_roles = self.ROLE_HIERARCHY[assigner_role]
+        if role not in assignable_roles:
+            raise AccessDeniedError(f"Role '{assigner_role}' cannot assign '{role}'")
+
+    async def get_member_roles(
+        self,
+        community_id: int,
+        *,
+        role_filter: Optional[str] = None,
+        active_only: bool = True,
+    ) -> List[Tuple[int, str]]:
+        """
+        Get community members and their roles.
 
         Args:
-            community: Target community
-            user: User to add
-            role: Role to assign
+            community_id: Community's unique identifier
+            role_filter: Optional role to filter by
+            active_only: Whether to include only active members
 
         Returns:
-            bool: True if member was added successfully
+            List of tuples containing user ID and role
+
+        Raises:
+            ResourceNotFoundError: If community not found
         """
-        if len(community.members) >= await self._get_community_member_limit(community):
-            raise QuotaExceededError("Community has reached maximum member capacity")
+        community = await self.get_community(community_id)
+        if not community:
+            raise ResourceNotFoundError(f"Community {community_id} not found")
 
-        community.add_member(user)
-        await self._assign_member_role(community, user, role)
-        await self.db.commit()
-
-        self._logger.info(
-            "member_added",
-            community_id=community.id,
-            user_id=user.id,
-            role=role,
+        query = self.db.query(CommunityMember).filter(
+            CommunityMember.community_id == community_id
         )
-        return True
 
-    async def _update_member_role(
-        self, community: Community, user: User, new_role: str
+        if role_filter:
+            if role_filter not in self.VALID_ROLES:
+                raise ValidationError(f"Invalid role filter: {role_filter}")
+            query = query.filter(CommunityMember.role == role_filter)
+
+        if active_only:
+            query = query.filter(CommunityMember.is_active.is_(True))
+
+        members = await query.all()
+        return [(member.user_id, member.role) for member in members]
+
+    async def update_member_status(
+        self,
+        community_id: int,
+        user_id: int,
+        is_active: bool,
+        updated_by: Optional[int] = None,
     ) -> bool:
-        """Update an existing member's role.
+        """
+        Update a member's active status.
 
         Args:
-            community: Target community
-            user: User to update
-            new_role: New role to assign
+            community_id: Community's unique identifier
+            user_id: Member's user ID
+            is_active: New active status
+            updated_by: ID of user making the update
 
         Returns:
-            bool: True if role was updated successfully
+            bool: True if status was updated
+
+        Raises:
+            ResourceNotFoundError: If community or member not found
+            AccessDeniedError: If update not allowed
+            StateError: If update fails
         """
-        current_role = await self._get_member_role(community, user)
-        if current_role == new_role:
-            return False
+        community = await self.get_community(community_id)
+        if not community:
+            raise ResourceNotFoundError(f"Community {community_id} not found")
 
-        await self._assign_member_role(community, user, new_role)
-        await self.db.commit()
+        member = await self._get_community_member(community, User(id=user_id))
+        if not member:
+            raise ResourceNotFoundError(f"Member {user_id} not found")
 
-        self._logger.info(
-            "member_role_updated",
-            community_id=community.id,
-            user_id=user.id,
-            old_role=current_role,
-            new_role=new_role,
-        )
-        return True
-
-    async def _remove_member_with_cleanup(
-        self, community: Community, user: User
-    ) -> bool:
-        """Remove a member and perform necessary cleanup.
-
-        Args:
-            community: Target community
-            user: User to remove
-
-        Returns:
-            bool: True if member was removed successfully
-        """
-        if user.id == community.owner_id:
-            raise BusinessRuleViolationError("Cannot remove community owner")
-
-        # Perform pre-removal cleanup
-        await self._cleanup_member_data(community, user)
-
-        community.remove_member(user)
-        await self.db.commit()
-
-        self._logger.info(
-            "member_removed",
-            community_id=community.id,
-            user_id=user.id,
-        )
-        return True
-
-    async def _cleanup_member_data(self, community: Community, user: User) -> None:
-        """Perform cleanup operations when removing a member.
-
-        This method handles all necessary data cleanup tasks when a member
-        is removed from a community, ensuring data consistency.
-
-        Args:
-            community: Target community
-            user: User being removed
-        """
         try:
-            # Remove member's content
-            await self._cleanup_member_content(community, user)
+            # Validate update permission
+            if updated_by:
+                await self._validate_member_update_permission(
+                    community, member, updated_by
+                )
 
-            # Remove member's roles
-            await self._cleanup_member_roles(community, user)
+            # Cannot deactivate owner
+            if (
+                member.role == "owner"
+                and not is_active
+                and member.user_id == community.owner_id
+            ):
+                raise BusinessRuleViolationError("Cannot deactivate community owner")
 
-            # Remove member's permissions
-            await self._cleanup_member_permissions(community, user)
+            old_status = member.is_active
+            member.is_active = is_active
+
+            if old_status != is_active:
+                # Update community member counts
+                if is_active:
+                    community.active_count += 1
+                else:
+                    community.active_count -= 1
+
+            await self.db.commit()
 
             self._logger.info(
-                "member_cleanup_completed",
-                community_id=community.id,
-                user_id=user.id,
+                "member_status_updated",
+                community_id=community_id,
+                user_id=user_id,
+                is_active=is_active,
+                updated_by=updated_by,
             )
+            return True
+
         except Exception as e:
+            await self.db.rollback()
             self._logger.error(
-                "member_cleanup_failed",
-                community_id=community.id,
-                user_id=user.id,
+                "member_status_update_failed",
+                community_id=community_id,
+                user_id=user_id,
                 error=str(e),
             )
-            raise
+            raise StateError(f"Failed to update member status: {str(e)}")
 
-    async def _cleanup_member_content(self, community: Community, user: User) -> None:
-        """Clean up member's content in the community.
-
-        Args:
-            community: Target community
-            user: User being removed
-        """
-        # Implement content cleanup logic
-        pass
-
-    async def _cleanup_member_roles(self, community: Community, user: User) -> None:
-        """Clean up member's roles in the community.
-
-        Args:
-            community: Target community
-            user: User being removed
-        """
-        # Implement role cleanup logic
-        pass
-
-    async def _cleanup_member_permissions(
-        self, community: Community, user: User
+    async def _validate_member_update_permission(
+        self,
+        community: Community,
+        target_member: CommunityMember,
+        updater_id: int,
     ) -> None:
-        """Clean up member's permissions in the community.
+        """
+        Validate if user can update a member's status.
 
         Args:
             community: Target community
-            user: User being removed
+            target_member: Member being updated
+            updater_id: ID of user attempting update
+
+        Raises:
+            AccessDeniedError: If update not allowed
         """
-        # Implement permission cleanup logic
-        pass
+        if updater_id == community.owner_id:
+            return
 
-    async def _can_join_community(self, user: User, community: Community) -> bool:
-        """Check if user can join community.
+        updater_member = await self._get_community_member(
+            community, User(id=updater_id)
+        )
+        if not updater_member:
+            raise AccessDeniedError("Updater is not a community member")
 
-        Args:
-            user: User attempting to join
-            community: Target community
+        updater_role = updater_member.role
+        target_role = target_member.role
 
-        Returns:
-            Whether user can join
-        """
-        if not user.is_active or not community.is_active:
-            return False
-
-        if community.privacy_level == PrivacyLevel.PUBLIC:
-            return True
-
-        if community.privacy_level == PrivacyLevel.PRIVATE:
-            # Check if user has been invited or meets other criteria
-            return await self._has_community_invite(user.id, community.id)
-
-        # Add additional join validation logic here
-        return False
-
-    async def _has_community_invite(self, user_id: int, community_id: int) -> bool:
-        """Check if user has been invited to community.
-
-        Args:
-            user_id: User to check
-            community_id: Community to check
-
-        Returns:
-            Whether user has active invite
-        """
-        # Implement invitation checking logic
-        return False
-
-    async def _get_community_member(self, community: Community, user: User) -> Any:
-        """Get the community member association record.
-
-        Args:
-            community: Target community
-            user: Target user
-
-        Returns:
-            Any: Community member record if found, None otherwise
-        """
-        return await self.db.query(community.members).filter_by(user_id=user.id).first()
-
-    async def _can_manage_roles(self, community: Community, user: User) -> bool:
-        """Check if user can manage roles in the community.
-
-        Args:
-            community: Target community
-            user: User to check
-
-        Returns:
-            bool: Whether user can manage roles
-        """
-        if user.id == community.owner_id:
-            return True
-
-        member_role = await self._get_member_role(community, user)
-        return member_role in {"admin", "moderator"}
-
-    async def _get_community_member_limit(self, community: Community) -> int:
-        """Get maximum allowed members for community.
-
-        Args:
-            community: Community to check
-
-        Returns:
-            Maximum member limit
-        """
-        if community.privacy_level == PrivacyLevel.PUBLIC:
-            return int("inf")
-        return self.MAX_MEMBERS_FREE
-
-    async def _get_user_owned_communities(self, user_id: int) -> List[Community]:
-        """Get communities owned by user.
-
-        Args:
-            user_id: User's unique identifier
-
-        Returns:
-            List of owned communities
-        """
-        user = await self.db.get(User, user_id)
-        if not user:
-            return []
-        return user.owned_communities
-
-    async def _get_user_community_limit(self, user_id: int) -> int:
-        """Get maximum communities user can own.
-
-        Args:
-            user_id: User's unique identifier
-
-        Returns:
-            Maximum community limit
-        """
-        # Implement limit logic based on user role/subscription
-        return 5  # Default limit
-
-    async def can_access(self, community: Community) -> bool:
-        """Check if community can be accessed in current context.
-
-        Args:
-            community: Community to check
-
-        Returns:
-            Whether community is accessible
-        """
-        if not community.is_active:
-            return False
-
-        if community.privacy_level == PrivacyLevel.PUBLIC:
-            return True
-
-        # Add additional access control logic
-        return True
-
-    async def process_filters(self, filters: Dict[str, Any]) -> Dict[str, Any]:
-        """Process and validate filter criteria.
-
-        Args:
-            filters: Raw filter criteria
-
-        Returns:
-            Processed filter criteria
-        """
-        processed = filters.copy()
-
-        # Always filter out inactive communities unless explicitly requested
-        if "is_active" not in processed:
-            processed["is_active"] = True
-
-        # Process privacy level filter
-        if "privacy_level" in processed and processed["privacy_level"] not in {
-            level.value for level in PrivacyLevel
-        }:
-            raise ValidationError(
-                f"Invalid privacy level: {processed['privacy_level']}"
+        # Check role hierarchy
+        if target_role not in self.ROLE_HIERARCHY.get(updater_role, []):
+            raise AccessDeniedError(
+                f"Role '{updater_role}' cannot modify '{target_role}'"
             )
 
-        return processed
+    async def get_inherited_relationships(
+        self,
+        community_id: int,
+        include_inactive: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get inherited community relationships.
+
+        This method retrieves relationships inherited through the community
+        hierarchy, including relationship metadata and inheritance path.
+
+        Args:
+            community_id: Community's unique identifier
+            include_inactive: Whether to include inactive relationships
+
+        Returns:
+            List of dictionaries containing relationship data
+
+        Raises:
+            ResourceNotFoundError: If community not found
+        """
+        community = await self.get_community(community_id)
+        if not community:
+            raise ResourceNotFoundError(f"Community {community_id} not found")
+
+        inherited = []
+        visited = set()
+
+        async def traverse_relationships(current: Community, path: List[int]) -> None:
+            if current.id in visited:
+                return
+            visited.add(current.id)
+
+            for related in current.related_communities:
+                if related.id == community_id:
+                    continue
+
+                if not include_inactive and not related.is_active:
+                    continue
+
+                inherited.append(
+                    {
+                        "community_id": related.id,
+                        "name": related.name,
+                        "inheritance_path": path.copy(),
+                        "privacy_level": related.privacy_level.value,
+                        "is_active": related.is_active,
+                    }
+                )
+
+                await traverse_relationships(related, path + [related.id])
+
+        await traverse_relationships(community, [community_id])
+        return inherited
+
+    async def validate_relationship_removal(
+        self,
+        community_id: int,
+        related_id: int,
+    ) -> None:
+        """
+        Validate if a relationship can be safely removed.
+
+        This method checks for dependencies and constraints that might
+        prevent relationship removal.
+
+        Args:
+            community_id: Primary community ID
+            related_id: Related community ID
+
+        Raises:
+            BusinessRuleViolationError: If removal not allowed
+            ValidationError: If validation fails
+        """
+        community = await self.get_community(community_id)
+        related = await self.get_community(related_id)
+
+        if not community or not related:
+            raise ResourceNotFoundError("One or both communities not found")
+
+        # Check for active shared resources
+        if await self._has_active_shared_resources(community, related):
+            raise BusinessRuleViolationError(
+                "Cannot remove relationship with active shared resources"
+            )
+
+        # Check if removal would break inheritance chain
+        dependent_communities = await self._get_dependent_communities(
+            community, related
+        )
+        if dependent_communities:
+            communities_str = ", ".join(str(c.id) for c in dependent_communities)
+            raise BusinessRuleViolationError(
+                f"Communities depend on this relationship: {communities_str}"
+            )
+
+    async def _get_dependent_communities(
+        self,
+        community: Community,
+        related: Community,
+    ) -> List[Community]:
+        """
+        Get communities that depend on a relationship.
+
+        Args:
+            community: Primary community
+            related: Related community
+
+        Returns:
+            List of dependent communities
+        """
+        dependents = []
+        visited = set()
+
+        def traverse_dependents(current: Community) -> None:
+            if current.id in visited:
+                return
+            visited.add(current.id)
+
+            for related_community in current.related_communities:
+                if related_community.id == related.id:
+                    dependents.append(current)
+                traverse_dependents(related_community)
+
+        for member in community.members:
+            for member_community in member.communities:
+                traverse_dependents(member_community)
+
+        return [d for d in dependents if d.id not in {community.id, related.id}]
+
+    async def _has_active_shared_resources(
+        self,
+        community: Community,
+        related: Community,
+    ) -> bool:
+        """
+        Check for active shared resources between communities.
+
+        Args:
+            community: Primary community
+            related: Related community
+
+        Returns:
+            bool: Whether active shared resources exist
+        """
+        # Check for shared contacts
+        shared_contacts = set(community.contacts) & set(related.contacts)
+        if any(contact.is_active for contact in shared_contacts):
+            return True
+
+        # Check for shared members
+        shared_members = set(community.members) & set(related.members)
+        if any(
+            member.is_active
+            for member in shared_members
+            if await self._get_member_role(community, member) in {"admin", "moderator"}
+        ):
+            return True
+
+        return False

@@ -276,7 +276,7 @@ class Category(
         )
         if calculated_path != self.path:
             raise ValueError(
-                f"Path mismatch: stored={self.path}, " f"calculated={calculated_path}"
+                f"Path mismatch: stored={self.path}, calculated={calculated_path}"
             )
 
         visited = set()

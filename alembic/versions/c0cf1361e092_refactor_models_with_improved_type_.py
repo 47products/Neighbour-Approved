@@ -21,6 +21,9 @@ down_revision: Union[str, None] = "794f4994f944"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+TIMEZONE_NOW = "now()"
+CATEGORIES_ID = "categories.id"
+
 
 def upgrade() -> None:
     """Pushes changes into the database."""
@@ -34,7 +37,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             TZDateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=False,
         ),
         sa.Column("updated_at", app.db.types.TZDateTime(timezone=True), nullable=True),
@@ -43,7 +46,7 @@ def upgrade() -> None:
         sa.Column("description", sa.String(length=255), nullable=True),
         sa.Column("slug", sa.String(length=100), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["parent_id"], ["categories.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["parent_id"], [CATEGORIES_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_categories_name"), "categories", ["name"], unique=False)
@@ -85,13 +88,13 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             app.db.types.TZDateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=False,
         ),
         sa.Column("updated_at", app.db.types.TZDateTime(timezone=True), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("name", sa.String(length=100), nullable=False),
-        sa.ForeignKeyConstraint(["category_id"], ["categories.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["category_id"], [CATEGORIES_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -102,7 +105,7 @@ def upgrade() -> None:
         "contact_categories",
         sa.Column("contact_id", sa.Integer(), nullable=False),
         sa.Column("category_id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["category_id"], ["categories.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["category_id"], [CATEGORIES_ID], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["contact_id"], ["contacts.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("contact_id", "category_id"),
     )
@@ -177,7 +180,7 @@ def upgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=False,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.alter_column(
         "communities", "is_active", existing_type=sa.BOOLEAN(), nullable=False
@@ -275,7 +278,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             app.db.types.TZDateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=False,
         ),
     )
@@ -315,7 +318,7 @@ def upgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=False,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.drop_index("ix_roles_id", table_name="roles")
     op.drop_constraint("roles_name_key", "roles", type_="unique")
@@ -353,7 +356,7 @@ def upgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=False,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.alter_column("users", "is_active", existing_type=sa.BOOLEAN(), nullable=False)
     op.drop_index("ix_users_id", table_name="users")
@@ -370,7 +373,7 @@ def downgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=True,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.alter_column(
         "users",
@@ -396,7 +399,7 @@ def downgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=True,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.alter_column(
         "roles",
@@ -495,7 +498,7 @@ def downgrade() -> None:
         "created_at",
         existing_type=postgresql.TIMESTAMP(timezone=True),
         nullable=True,
-        existing_server_default=sa.text("now()"),
+        existing_server_default=sa.text(TIMEZONE_NOW),
     )
     op.alter_column(
         "communities",

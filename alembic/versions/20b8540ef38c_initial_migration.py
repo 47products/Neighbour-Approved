@@ -18,6 +18,10 @@ down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+TIMEZONE_NOW = "now()"
+USERS_ID = "users.id"
+COMMUNITIES_ID = "communities.id"
+
 
 def upgrade() -> None:
     """Pushes changes into the database"""
@@ -31,7 +35,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=True,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -54,7 +58,7 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=True,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -73,14 +77,14 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=True,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("owner_id", sa.Integer(), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=True),
         sa.Column("privacy_level", sa.String(length=20), nullable=True),
-        sa.ForeignKeyConstraint(["owner_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["owner_id"], [USERS_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_communities_id"), "communities", ["id"], unique=False)
@@ -90,7 +94,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("role_id", sa.Integer(), nullable=False),
         sa.ForeignKeyConstraint(["role_id"], ["roles.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], [USERS_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id", "role_id"),
     )
     op.create_table(
@@ -98,10 +102,10 @@ def upgrade() -> None:
         sa.Column("community_a_id", sa.Integer(), nullable=False),
         sa.Column("community_b_id", sa.Integer(), nullable=False),
         sa.ForeignKeyConstraint(
-            ["community_a_id"], ["communities.id"], ondelete="CASCADE"
+            ["community_a_id"], [COMMUNITIES_ID], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["community_b_id"], ["communities.id"], ondelete="CASCADE"
+            ["community_b_id"], [COMMUNITIES_ID], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("community_a_id", "community_b_id"),
     )
@@ -121,10 +125,8 @@ def upgrade() -> None:
         sa.Column("categories", sa.String(length=255), nullable=False),
         sa.Column("services", sa.String(length=255), nullable=False),
         sa.Column("endorsements_count", sa.Integer(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["community_id"], ["communities.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["community_id"], [COMMUNITIES_ID], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], [USERS_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -136,19 +138,15 @@ def upgrade() -> None:
         "user_communities",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("community_id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["community_id"], ["communities.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["community_id"], [COMMUNITIES_ID], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], [USERS_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("user_id", "community_id"),
     )
     op.create_table(
         "community_contacts",
         sa.Column("community_id", sa.Integer(), nullable=False),
         sa.Column("contact_id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["community_id"], ["communities.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["community_id"], [COMMUNITIES_ID], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["contact_id"], ["contacts.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("community_id", "contact_id"),
     )
@@ -164,17 +162,15 @@ def upgrade() -> None:
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
+            server_default=sa.text(TIMEZONE_NOW),
             nullable=False,
         ),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("is_verified", sa.Boolean(), nullable=True),
         sa.Column("verification_date", sa.DateTime(timezone=True), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["community_id"], ["communities.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["community_id"], [COMMUNITIES_ID], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["contact_id"], ["contacts.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], [USERS_ID], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(

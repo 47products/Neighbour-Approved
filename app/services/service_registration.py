@@ -14,7 +14,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.services.base import BaseService
-from app.services.exceptions import DependencyError
+from app.services.service_exceptions import DependencyError
 from app.db.database_session_management import get_db
 
 logger = structlog.get_logger(__name__)
