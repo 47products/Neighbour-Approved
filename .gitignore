@@ -6,3 +6,5 @@ __pycache__
 tmp/
 .txt
 logs/
+.sonar_lock
+.scannerwork

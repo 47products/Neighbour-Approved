@@ -15,6 +15,7 @@ from app.db.database_types import TZDateTime
 from app.db.models.user_model import User
 from app.db.models.role_model import Role
 from app.db.models.community_model import Community, PrivacyLevel
+from app.db.models.community_member_model import CommunityMember
 from app.db.models.category_model import Category
 from app.db.models.service_model import Service
 from app.db.models.contact_model import Contact
@@ -32,6 +33,7 @@ __all__ = [
     "User",
     "Role",
     "Community",
+    "CommunityMember",
     "Category",
     "Service",
     "Contact",

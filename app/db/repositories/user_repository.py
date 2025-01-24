@@ -212,47 +212,31 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
             raise DatabaseError("Failed to update user") from e
 
     async def authenticate(self, email: str, password: str) -> Optional[User]:
-        """
-        Authenticate a user by email and password.
+        """Retrieve a user for authentication purposes.
 
-        This method handles user authentication by verifying the email and
-        password combination. It also updates the user's last login timestamp
-        upon successful authentication.
+        This method handles only the data retrieval aspect of authentication,
+        leaving business logic to the service layer.
 
         Args:
             email: User's email address
             password: User's password (plain text)
 
         Returns:
-            Optional[User]: Authenticated user instance if successful, None otherwise
-
-        Example:
-            user = await repository.authenticate("user@example.com", "password123")
-            if user:
-                print("Authentication successful")
+            Optional[User]: User instance if found, None otherwise
         """
-        user = await self.get_by_email(email)
-        if not user or not user.is_active:
-            return None
-
-        if not user.verify_password(password):
-            return None
-
-        await self.update_last_login(user.id)
-        return user
+        return await self.get_by_email(email)
 
     async def update_last_login(self, user_id: int) -> None:
-        """
-        Update user's last login timestamp.
+        """Update user's last login timestamp.
 
-        This method records the current timestamp as the user's last login time.
-        It's typically called after successful authentication.
+        Records the current timestamp as the user's last login time.
+        Handles only the data persistence aspect of the login tracking.
 
         Args:
             user_id: User's unique identifier
 
-        Example:
-            await repository.update_last_login(user.id)
+        Raises:
+            DatabaseError: If the database operation fails
         """
         try:
             user = await self.get(user_id)
@@ -262,35 +246,13 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
                 self._logger.info("last_login_updated", user_id=user_id)
         except Exception as e:
             self._logger.error(
-                "last_login_update_failed", error=str(e), user_id=user_id
+                "last_login_update_failed",
+                error=str(e),
+                user_id=user_id,
+                error_type=type(e).__name__,
             )
             await self._db.rollback()
-
-    async def verify_email(self, user_id: int) -> Optional[User]:
-        """
-        Mark user's email as verified.
-
-        This method updates the user's email verification status, typically
-        called after a user completes the email verification process.
-
-        Args:
-            user_id: User's unique identifier
-
-        Returns:
-            Optional[User]: Updated user instance if successful, None if user not found
-
-        Example:
-            user = await repository.verify_email(123)
-            if user:
-                print("Email verified successfully")
-        """
-        user = await self.get(user_id)
-        if user:
-            user.email_verified = True
-            await self._db.commit()
-            self._logger.info("email_verified", user_id=user_id)
-            return user
-        return None
+            raise DatabaseError("Failed to update last login timestamp") from e
 
     async def search_users(
         self, search_term: str, skip: int = 0, limit: int = 10, active_only: bool = True
