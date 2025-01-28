@@ -4,18 +4,32 @@ Repository implementation module.
 This module provides the concrete implementation of the repository interface,
 implementing all required database operations. It serves as the base class
 for all specific repository implementations in the application.
+
+The repository layer is responsible for:
+- Database operations
+- Data access patterns
+- Query execution
+- Connection management
 """
 
 from typing import Generic, TypeVar, Type, Optional, List, Any, Dict
-from fastapi import HTTPException, status
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
 import structlog
 
+from app.db.errors import (
+    QueryError,
+    IntegrityError as RepositoryIntegrityError,
+    TransactionError,
+)
 from app.db.repositories.repository_interface import IRepository
 from app.db.database_configuration import Base
-from app.core.error_handling import DatabaseError, RecordNotFoundError
+from app.core.error_handling import (
+    DatabaseError,
+    RecordNotFoundError,
+    DuplicateRecordError,
+)
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType")
@@ -31,6 +45,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     This class implements the IRepository interface, providing concrete implementations
     of all required database operations. It serves as the foundation for all
     model-specific repositories.
+
+    Attributes:
+        _model: SQLAlchemy model class
+        _db: Database session
+        _logger: Structured logger instance
 
     Type Parameters:
         ModelType: The SQLAlchemy model type
@@ -66,16 +85,12 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             The created model instance
 
         Raises:
-            HTTPException: If creation fails
+            RepositoryIntegrityError: If unique constraint is violated
+            QueryError: If database query fails
+            TransactionError: If transaction fails
         """
         try:
-            self._logger.info(
-                "creating_record",
-                model=self._model.__name__,
-                data=schema.model_dump(
-                    exclude={"password"} if hasattr(schema, "password") else None
-                ),
-            )
+            self._logger.debug("db_create_start", model=self._model.__name__)
 
             db_obj = self._model(**schema.model_dump())
             self._db.add(db_obj)
@@ -83,35 +98,26 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self._db.refresh(db_obj)
             await self._db.commit()
 
-            self._logger.info(
-                "record_created", model=self._model.__name__, model_id=db_obj.id
+            self._logger.debug(
+                "db_create_success",
+                model=self._model.__name__,
+                record_id=getattr(db_obj, "id", None),
             )
             return db_obj
 
         except IntegrityError as e:
             await self._db.rollback()
-            self._logger.error(
-                "creation_failed_integrity",
-                model=self._model.__name__,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Resource already exists",
+            self._logger.error("db_create_integrity_error", error=str(e))
+            raise RepositoryIntegrityError(
+                details={"model": self._model.__name__, "error": str(e)}
             ) from e
 
         except SQLAlchemyError as e:
             await self._db.rollback()
-            self._logger.error(
-                "creation_failed",
-                model=self._model.__name__,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create record",
+            self._logger.error("db_create_error", error=str(e))
+            raise TransactionError(
+                message="Failed to create database record",
+                details={"model": self._model.__name__, "error": str(e)},
             ) from e
 
     async def get(self, id: Any) -> Optional[ModelType]:
@@ -123,36 +129,26 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Returns:
             Model instance if found, None otherwise
+
+        Raises:
+            QueryError: If database query fails
         """
         try:
-            self._logger.debug(
-                "fetching_record", model=self._model.__name__, model_id=id
-            )
+            self._logger.debug("db_get_start", model_id=id)
 
             query = select(self._model).where(self._model.id == id)
             result = await self._db.execute(query)
             record = result.scalar_one_or_none()
 
-            if record:
-                self._logger.debug(
-                    "record_found", model=self._model.__name__, model_id=id
-                )
-            else:
-                self._logger.debug(
-                    "record_not_found", model=self._model.__name__, model_id=id
-                )
-
+            self._logger.debug("db_get_success", model_id=id, found=bool(record))
             return record
 
         except SQLAlchemyError as e:
-            self._logger.error(
-                "fetch_failed",
-                model=self._model.__name__,
-                model_id=id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise DatabaseError(f"Error fetching {self._model.__name__}") from e
+            self._logger.error("db_get_error", error=str(e))
+            raise QueryError(
+                message="Failed to retrieve database record",
+                details={"model": self._model.__name__, "id": id, "error": str(e)},
+            ) from e
 
     async def get_multi(
         self,
@@ -171,14 +167,13 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Returns:
             List of model instances
+
+        Raises:
+            QueryError: If database query fails
         """
         try:
             self._logger.debug(
-                "fetching_multiple_records",
-                model=self._model.__name__,
-                skip=skip,
-                limit=limit,
-                filters=filters,
+                "db_get_multi_start", skip=skip, limit=limit, filters=filters
             )
 
             query = select(self._model)
@@ -189,25 +184,20 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             result = await self._db.execute(query)
             records = result.scalars().all()
 
-            self._logger.debug(
-                "multiple_records_fetched",
-                model=self._model.__name__,
-                record_count=len(records),
-            )
+            self._logger.debug("db_get_multi_success", record_count=len(records))
             return records
 
         except SQLAlchemyError as e:
-            self._logger.error(
-                "fetch_multiple_failed",
-                model=self._model.__name__,
-                error=str(e),
-                error_type=type(e).__name__,
-                skip=skip,
-                limit=limit,
-                filters=filters,
-            )
-            raise DatabaseError(
-                f"Error fetching multiple {self._model.__name__}"
+            self._logger.error("db_get_multi_error", error=str(e))
+            raise QueryError(
+                message="Failed to retrieve multiple database records",
+                details={
+                    "model": self._model.__name__,
+                    "skip": skip,
+                    "limit": limit,
+                    "filters": filters,
+                    "error": str(e),
+                },
             ) from e
 
     async def update(self, *, id: Any, schema: UpdateSchemaType) -> Optional[ModelType]:
@@ -223,18 +213,17 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Raises:
             RecordNotFoundError: If record not found
+            RepositoryIntegrityError: If update violates constraints
+            TransactionError: If transaction fails
         """
         try:
-            self._logger.info(
-                "updating_record",
-                model=self._model.__name__,
-                model_id=id,
-                update_data=schema.model_dump(exclude_unset=True),
-            )
+            self._logger.debug("db_update_start", record_id=id)
 
             record = await self.get(id)
             if not record:
-                raise RecordNotFoundError(f"{self._model.__name__} not found")
+                raise RecordNotFoundError(
+                    details={"model": self._model.__name__, "id": id}
+                )
 
             update_data = schema.model_dump(exclude_unset=True)
             for field, value in update_data.items():
@@ -243,19 +232,23 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self._db.commit()
             await self._db.refresh(record)
 
-            self._logger.info("record_updated", model=self._model.__name__, model_id=id)
+            self._logger.debug("db_update_success", record_id=id)
             return record
+
+        except IntegrityError as e:
+            await self._db.rollback()
+            self._logger.error("db_update_integrity_error", error=str(e))
+            raise RepositoryIntegrityError(
+                details={"model": self._model.__name__, "id": id, "error": str(e)}
+            ) from e
 
         except SQLAlchemyError as e:
             await self._db.rollback()
-            self._logger.error(
-                "update_failed",
-                model=self._model.__name__,
-                model_id=id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise DatabaseError(f"Error updating {self._model.__name__}") from e
+            self._logger.error("db_update_error", error=str(e))
+            raise TransactionError(
+                message="Failed to update database record",
+                details={"model": self._model.__name__, "id": id, "error": str(e)},
+            ) from e
 
     async def delete(self, id: Any) -> bool:
         """
@@ -265,36 +258,29 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             id: Record identifier
 
         Returns:
-            True if record was deleted, False otherwise
+            True if record was deleted, False if not found
+
+        Raises:
+            TransactionError: If deletion fails
         """
         try:
-            self._logger.info(
-                "deleting_record", model=self._model.__name__, model_id=id
-            )
+            self._logger.debug("db_delete_start", record_id=id)
 
             query = delete(self._model).where(self._model.id == id)
             result = await self._db.execute(query)
             await self._db.commit()
 
             success = result.rowcount > 0
-            self._logger.info(
-                "record_deleted" if success else "record_not_found",
-                model=self._model.__name__,
-                model_id=id,
-                success=success,
-            )
+            self._logger.debug("db_delete_success", record_id=id, deleted=success)
             return success
 
         except SQLAlchemyError as e:
             await self._db.rollback()
-            self._logger.error(
-                "deletion_failed",
-                model=self._model.__name__,
-                model_id=id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-            raise DatabaseError(f"Error deleting {self._model.__name__}") from e
+            self._logger.error("db_delete_error", error=str(e))
+            raise TransactionError(
+                message="Failed to delete database record",
+                details={"model": self._model.__name__, "id": id, "error": str(e)},
+            ) from e
 
     async def exists(self, id: Any) -> bool:
         """
@@ -305,24 +291,30 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Returns:
             True if record exists, False otherwise
+
+        Raises:
+            QueryError: If database query fails
         """
-        self._logger.debug(
-            "checking_record_existence", model=self._model.__name__, model_id=id
-        )
+        try:
+            self._logger.debug("db_exists_check_start", record_id=id)
 
-        query = (
-            select(func.count()).select_from(self._model).where(self._model.id == id)
-        )
-        result = await self._db.execute(query)
-        exists = bool(result.scalar())
+            query = (
+                select(func.count())
+                .select_from(self._model)
+                .where(self._model.id == id)
+            )
+            result = await self._db.execute(query)
+            exists = bool(result.scalar())
 
-        self._logger.debug(
-            "record_existence_checked",
-            model=self._model.__name__,
-            model_id=id,
-            exists=exists,
-        )
-        return exists
+            self._logger.debug("db_exists_check_success", record_id=id, exists=exists)
+            return exists
+
+        except SQLAlchemyError as e:
+            self._logger.error("db_exists_check_error", error=str(e))
+            raise QueryError(
+                message="Failed to check record existence",
+                details={"model": self._model.__name__, "id": id, "error": str(e)},
+            ) from e
 
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """
@@ -333,11 +325,12 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Returns:
             Number of matching records
+
+        Raises:
+            QueryError: If database query fails
         """
         try:
-            self._logger.debug(
-                "counting_records", model=self._model.__name__, filters=filters
-            )
+            self._logger.debug("db_count_start", filters=filters)
 
             query = select(func.count()).select_from(self._model)
             if filters:
@@ -346,25 +339,21 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             result = await self._db.execute(query)
             count = result.scalar()
 
-            self._logger.debug(
-                "records_counted",
-                model=self._model.__name__,
-                count=count,
-                filters=filters,
-            )
+            self._logger.debug("db_count_success", count=count)
             return count
 
         except SQLAlchemyError as e:
-            self._logger.error(
-                "count_failed",
-                model=self._model.__name__,
-                error=str(e),
-                error_type=type(e).__name__,
-                filters=filters,
-            )
-            raise DatabaseError(f"Error counting {self._model.__name__}") from e
+            self._logger.error("db_count_error", error=str(e))
+            raise QueryError(
+                message="Failed to count database records",
+                details={
+                    "model": self._model.__name__,
+                    "filters": filters,
+                    "error": str(e),
+                },
+            ) from e
 
-    def filter_by(self, **kwargs: Any) -> List[ModelType]:
+    async def filter_by(self, **kwargs: Any) -> List[ModelType]:
         """
         Retrieve records matching exact criteria.
 
@@ -373,28 +362,27 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         Returns:
             List of matching model instances
+
+        Raises:
+            QueryError: If database query fails
         """
-        self._logger.debug(
-            "filtering_records", model=self._model.__name__, filters=kwargs
-        )
-
         try:
-            records = self._db.query(self._model).filter_by(**kwargs).all()
+            self._logger.debug("db_filter_start", filters=kwargs)
 
-            self._logger.debug(
-                "records_filtered",
-                model=self._model.__name__,
-                record_count=len(records),
-                filters=kwargs,
-            )
+            query = select(self._model).filter_by(**kwargs)
+            result = await self._db.execute(query)
+            records = result.scalars().all()
+
+            self._logger.debug("db_filter_success", record_count=len(records))
             return records
 
         except SQLAlchemyError as e:
-            self._logger.error(
-                "filter_failed",
-                model=self._model.__name__,
-                error=str(e),
-                error_type=type(e).__name__,
-                filters=kwargs,
-            )
-            raise DatabaseError(f"Error filtering {self._model.__name__}") from e
+            self._logger.error("db_filter_error", error=str(e))
+            raise QueryError(
+                message="Failed to filter database records",
+                details={
+                    "model": self._model.__name__,
+                    "filters": kwargs,
+                    "error": str(e),
+                },
+            ) from e
