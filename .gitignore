@@ -8,3 +8,6 @@ tmp/
 logs/
 .sonar_lock
 .scannerwork
+.coverage
+.coveragerc
+.coverage.xml

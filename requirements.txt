@@ -23,7 +23,9 @@ pydocstyle==6.3.0
 pylint==3.3.2
 pytest==8.3.4
 pytest-asyncio==0.24.0
+pytest-mock==3.14.0
 pytest-cov==6.0.0
+bandit==1.8.2
 
 # Type checking
 mypy==1.14.1
