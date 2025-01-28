@@ -45,6 +45,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Add PYTHONPATH to include the app directory
+      - name: 🔧 Set PYTHONPATH
+        run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
+
       # Run code formatting checks
       - name: 🧹 Run Black (check mode)
         run: |
