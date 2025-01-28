@@ -121,6 +121,7 @@ classDiagram
 The `UserService` handles all user-related business logic including authentication, role management, and user lifecycle operations.
 
 #### Key Features
+
 - User authentication and password handling
 - Email verification workflows
 - Role assignment and management
@@ -128,6 +129,7 @@ The `UserService` handles all user-related business logic including authenticati
 - Authentication history tracking
 
 #### Example Usage
+
 ```python
 user_service = UserService(db)
 
@@ -142,6 +144,7 @@ await user_service.verify_email(user_id=1)
 ```
 
 #### Key Methods
+
 | Method | Description | Returns |
 |--------|-------------|---------|
 | `authenticate` | Authenticate user with credentials | Optional[User] |
@@ -155,6 +158,7 @@ await user_service.verify_email(user_id=1)
 The `CommunityService` manages community operations including membership, privacy controls, and relationships between communities.
 
 #### Key Features
+
 - Membership management with roles
 - Privacy level control and validation
 - Community relationship management
@@ -162,6 +166,7 @@ The `CommunityService` manages community operations including membership, privac
 - Community metrics calculation
 
 #### Example Usage
+
 ```python
 community_service = CommunityService(db)
 
@@ -182,6 +187,7 @@ await community_service.manage_privacy_level(
 ```
 
 #### Key Methods
+
 | Method | Description | Returns |
 |--------|-------------|---------|
 | `manage_membership` | Handle member operations | bool |
@@ -194,6 +200,7 @@ await community_service.manage_privacy_level(
 The `ContactService` handles contact management including endorsement calculations, verification workflows, and service associations.
 
 #### Key Features
+
 - Service and category associations
 - Endorsement metric calculations
 - Contact verification workflows
@@ -201,6 +208,7 @@ The `ContactService` handles contact management including endorsement calculatio
 - Contact statistics
 
 #### Example Usage
+
 ```python
 contact_service = ContactService(db)
 
@@ -218,6 +226,7 @@ await contact_service.update_endorsement_metrics(contact_id=1)
 ```
 
 #### Key Methods
+
 | Method | Description | Returns |
 |--------|-------------|---------|
 | `add_service` | Add service to contact | bool |
@@ -230,6 +239,7 @@ await contact_service.update_endorsement_metrics(contact_id=1)
 The `EndorsementService` manages endorsement operations including rating calculations, verification workflows, and notification handling.
 
 #### Key Features
+
 - Weighted rating calculations
 - Verification workflows
 - Notification integration
@@ -237,6 +247,7 @@ The `EndorsementService` manages endorsement operations including rating calcula
 - Fraud detection
 
 #### Example Usage
+
 ```python
 endorsement_service = EndorsementService(db)
 
@@ -251,6 +262,7 @@ await endorsement_service.verify_endorsement(
 ```
 
 #### Key Methods
+
 | Method | Description | Returns |
 |--------|-------------|---------|
 | `calculate_weighted_rating` | Calculate rating with factors | float |
