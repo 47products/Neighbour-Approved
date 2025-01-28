@@ -8,19 +8,25 @@ on:
 
 jobs:
   build:
+    name: Build and Test Application
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.12"]
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+    steps:
+      # Checkout the repository
+      - name: 🛠️ Checkout Code
+        uses: actions/checkout@v4
+
+      # Set up Python environment
+      - name: ⚙️ Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip
+      # Cache pip dependencies
+      - name: 📦 Cache pip dependencies
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -28,16 +34,25 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Create virtual environment
+      # Create virtual environment
+      - name: 🌐 Create virtual environment
         run: python -m venv .venv
 
-      - name: Install dependencies
+      # Install dependencies
+      - name: 📥 Install dependencies
         run: |
           . .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Black (check mode)
+      # Run code formatting checks
+      - name: 🧹 Run Black (check mode)
         run: |
           . .venv/bin/activate
           black --check .
+
+      # Run test suite with coverage
+      - name: ✅ Run Tests with Coverage
+        run: |
+          . .venv/bin/activate
+          pytest --cov=app --cov-report=term-missing --cov-report=xml
