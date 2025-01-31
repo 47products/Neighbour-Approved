@@ -436,9 +436,6 @@ disable=raw-checker-failed,
         invalid-name,
         no-member,
         not-callable,
-        line-too-long,
-        missing-module-docstring,
-        
 
 
 # Enable the message, report, category or checker with the given id(s). You can

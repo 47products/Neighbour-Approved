@@ -16,7 +16,6 @@ The module provides comprehensive handling of:
 from datetime import datetime, UTC
 from typing import List, Optional, Dict, Any, cast
 from sqlalchemy.orm import Session
-import structlog
 
 from app.services.base import BaseService
 from app.services.service_interfaces import IContactService
@@ -25,7 +24,6 @@ from app.services.service_exceptions import (
     BusinessRuleViolationError,
     ResourceNotFoundError,
     DuplicateResourceError,
-    AccessDeniedError,
     StateError,
 )
 from app.db.models.contact_model import Contact
@@ -548,7 +546,7 @@ class ContactService(
         """
         return (
             await self.db.query(Contact)
-            .filter(Contact.user_id == user_id, Contact.is_active == True)  # noqa: E712
+            .filter(Contact.user_id == user_id, Contact.is_active is True)
             .count()
         )
 

@@ -45,7 +45,6 @@ class NotificationService:
     ) -> None:
         """Send notification to user."""
         # Implement actual notification sending
-        pass
 
     async def _get_notification_preferences(self, user_id: int) -> Dict[str, bool]:
         """Get user's notification preferences.

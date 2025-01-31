@@ -14,10 +14,8 @@ Attributes:
 import logging
 import logging.config
 from pathlib import Path
-import sys
 from typing import Any, Dict, Optional
 import structlog
-from pythonjsonlogger.json import JsonFormatter
 from rich.console import Console
 from rich.traceback import install as install_rich_traceback
 

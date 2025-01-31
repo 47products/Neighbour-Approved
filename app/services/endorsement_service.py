@@ -10,14 +10,12 @@ by encapsulating business rules and validation logic separate from data access.
 from datetime import datetime, UTC
 from typing import List, Optional, Dict, Any, cast
 from sqlalchemy.orm import Session
-import structlog
 
 from app.services.base import BaseService
 from app.services.notification_service import NotificationService, NotificationType
 from app.services.service_interfaces import IEndorsementService
 from app.services.service_exceptions import (
     ValidationError,
-    BusinessRuleViolationError,
     ResourceNotFoundError,
     DuplicateResourceError,
     StateError,

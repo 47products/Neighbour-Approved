@@ -13,11 +13,10 @@ The module provides comprehensive handling of:
 - Resource quotas and limits
 """
 
-from datetime import datetime, UTC, timedelta
+from datetime import datetime, UTC
 from enum import Enum
-from typing import List, Optional, Dict, Any, Set, Tuple, Union, cast
+from typing import List, Optional, Dict, Any, Set, Tuple, cast
 from sqlalchemy.orm import Session
-import structlog
 
 from app.services.base import BaseService
 from app.services.service_interfaces import ICommunityService
@@ -25,7 +24,6 @@ from app.services.service_exceptions import (
     ValidationError,
     BusinessRuleViolationError,
     ResourceNotFoundError,
-    DuplicateResourceError,
     AccessDeniedError,
     StateError,
     QuotaExceededError,
