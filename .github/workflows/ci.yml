@@ -14,6 +14,13 @@ jobs:
       matrix:
         python-version: ["3.12"]
 
+    env:
+      POSTGRES_USER: "test_user"
+      POSTGRES_PASSWORD: "test_password"
+      POSTGRES_HOST: "localhost"
+      POSTGRES_DB: "test_db"
+      LOG_LEVEL: "INFO"
+
     steps:
       # Checkout the repository
       - name: 🛠️ Checkout Code
@@ -60,3 +67,4 @@ jobs:
         run: |
           . .venv/bin/activate
           pytest --cov=app --cov-report=term-missing --cov-report=xml
+
