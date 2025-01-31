@@ -42,7 +42,7 @@ from app.core.middleware_management import (
     MiddlewareRegistry,
     MiddlewarePriority,
 )
-from app.db.config import get_settings
+from app.core.config import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -77,26 +77,11 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
     ) -> Response:
         """
         Process and log request/response cycle.
-
-        This method implements request logging with timing and error tracking.
-        It can be configured to skip certain endpoints (e.g., health checks)
-        to reduce noise in logs.
-
-        Args:
-            request: FastAPI request instance
-            call_next: Async function to call the next middleware/endpoint
-
-        Returns:
-            Response: FastAPI response instance
         """
-        # Skip logging for health check endpoints if configured
         settings = get_settings()
-        if not settings.ENABLE_REQUEST_LOGGING or request.url.path.endswith("/health"):
-            return await call_next(request)
-
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-        # Create request-specific logger with context
+        # Clean logging for files
         request_logger = self._logger.bind(
             request_id=request_id,
             method=request.method,
@@ -106,16 +91,16 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
             user_agent=request.headers.get("user-agent"),
         )
 
-        # Log request start
+        if settings.LOG_FORMAT == "json":
+            request_logger = structlog.get_logger(__name__).bind(json=True)
+
         request_logger.info("http_request_started")
 
-        # Process request with timing
         start_time = time.time()
         try:
             response = await call_next(request)
             duration = time.time() - start_time
 
-            # Log successful response
             request_logger.info(
                 "http_request_completed",
                 status_code=response.status_code,
@@ -123,14 +108,11 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
                 content_length=response.headers.get("content-length"),
             )
 
-            # Add request ID to response headers
             response.headers["X-Request-ID"] = request_id
             return response
 
         except Exception as e:
             duration = time.time() - start_time
-
-            # Log failed request with details
             request_logger.error(
                 "http_request_failed",
                 error=str(e),
