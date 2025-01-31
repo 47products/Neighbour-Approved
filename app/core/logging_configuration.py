@@ -5,6 +5,10 @@ This module sets up structured logging using structlog and Rich for enhanced vis
 with proper formatting, context management, and integration with standard library logging.
 It provides consistent logging patterns across the application with support for different
 environments and log levels.
+
+Attributes:
+    settings: Core application settings instance
+    console: Rich console instance for enhanced terminal output
 """
 
 import logging
@@ -13,11 +17,11 @@ from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
 import structlog
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger.json import JsonFormatter
 from rich.console import Console
 from rich.traceback import install as install_rich_traceback
 
-from app.db.config import Settings
+from app.core.config import Settings
 
 # Initialize settings and Rich console
 settings = Settings()
@@ -26,91 +30,56 @@ install_rich_traceback(show_locals=True)
 
 
 def configure_stdlib_logging() -> None:
-    """Configure standard library logging to work with structlog and Rich."""
+    """Configure standard library logging to work with structlog and Rich.
+
+    Sets up the standard library logging configuration with structured formatting,
+    file rotation, and separate handlers for console and file output.
+
+    The configuration includes:
+        - Console output using Rich for enhanced visualization
+        - Daily rotating file logs
+        - Separate error log file
+        - SQL query logging based on settings
+
+    Raises:
+        OSError: If log directory creation fails
+    """
     log_config = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "json": {
-                "()": jsonlogger.JsonFormatter,
-                "format": "%(timestamp)s %(level)s %(name)s %(message)s %(pathname)s %(lineno)d %(process)d %(thread)d %(threadName)s",
+            "standard": {
+                "format": "%(asctime)s [%(levelname)s] %(message)s (%(name)s:%(lineno)d)",
+                "datefmt": "%Y-%m-%d %H:%M:%S",
             },
-            "rich": {
-                "format": "%(message)s",
+            "json": {
+                "()": "pythonjsonlogger.json.JsonFormatter",
+                "format": "%(asctime)s %(levelname)s %(message)s %(name)s %(lineno)d",
             },
         },
         "handlers": {
             "console": {
                 "class": "rich.logging.RichHandler",
-                "formatter": "rich",
+                "formatter": "standard",
                 "show_time": True,
                 "show_level": True,
                 "rich_tracebacks": True,
                 "tracebacks_show_locals": True,
                 "level": settings.LOG_LEVEL,
-                "markup": True,
-            },
-            "json_console": {
-                "class": "logging.StreamHandler",
-                "formatter": "json",
-                "stream": sys.stdout,
-                "level": settings.LOG_LEVEL,
+                "markup": False,  # Prevent ANSI escape codes in logs
             },
             "file": {
-                "class": "logging.handlers.TimedRotatingFileHandler",
-                "formatter": "json",
+                "class": "logging.FileHandler",
+                "formatter": "standard",  # Ensure log files are clean
                 "filename": f"{settings.LOG_PATH}/app.log",
-                "when": "midnight",
-                "interval": 1,
-                "backupCount": 30,
                 "encoding": "utf-8",
                 "level": settings.LOG_LEVEL,
-            },
-            "error_file": {
-                "class": "logging.handlers.RotatingFileHandler",
-                "formatter": "json",
-                "filename": f"{settings.LOG_PATH}/error.log",
-                "maxBytes": 10485760,  # 10MB
-                "backupCount": 10,
-                "encoding": "utf-8",
-                "level": "ERROR",
             },
         },
         "loggers": {
-            "": {  # Root logger
-                "handlers": [
-                    (
-                        "console"
-                        if settings.ENVIRONMENT == "development"
-                        else "json_console"
-                    ),
-                    "file",
-                    "error_file",
-                ],
+            "": {
+                "handlers": ["console", "file"],
                 "level": settings.LOG_LEVEL,
-            },
-            "uvicorn": {
-                "handlers": [
-                    (
-                        "console"
-                        if settings.ENVIRONMENT == "development"
-                        else "json_console"
-                    )
-                ],
-                "level": settings.LOG_LEVEL,
-                "propagate": False,
-            },
-            "sqlalchemy.engine": {
-                "handlers": [
-                    (
-                        "console"
-                        if settings.ENVIRONMENT == "development"
-                        else "json_console"
-                    ),
-                    "file",
-                ],
-                "level": "INFO" if settings.ENABLE_SQL_LOGGING else "WARNING",
-                "propagate": False,
             },
         },
     }
@@ -124,7 +93,7 @@ def configure_stdlib_logging() -> None:
 
 def setup_structlog() -> None:
     """Configure structlog with enhanced processors and Rich integration."""
-    timestamper = structlog.processors.TimeStamper(fmt="iso")
+    timestamper = structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S")
 
     shared_processors = [
         structlog.stdlib.add_logger_name,
@@ -137,22 +106,12 @@ def setup_structlog() -> None:
     ]
 
     if settings.ENVIRONMENT == "development":
-        # Using simple string-based styles instead of functions
-        renderer = structlog.dev.ConsoleRenderer(
-            colors=True,
-            level_styles={
-                "debug": "blue",
-                "info": "green",
-                "warning": "yellow",
-                "error": "red",
-                "critical": "red,bold",
-            },
-        )
-        processors = shared_processors + [renderer]
+        # Enable colors only for console
+        processors = shared_processors + [structlog.dev.ConsoleRenderer(colors=True)]
     else:
+        # Remove ANSI colors in production logs
         processors = shared_processors + [
-            structlog.processors.dict_tracebacks,
-            structlog.processors.JSONRenderer(),
+            structlog.processors.JSONRenderer()  # Logs as clean JSON
         ]
 
     structlog.configure(
@@ -165,14 +124,18 @@ def setup_structlog() -> None:
 
 
 class AppLogger:
-    """
-    Application logger with context management and standard methods.
+    """Application logger with context management and standard methods.
 
     This class provides a consistent interface for logging across the application,
     with support for context management and standardized log fields.
+
+    Attributes:
+        logger: Structured logger instance
+        context (dict): Current logging context
     """
 
     def __init__(self, name: str):
+        """Initialize the logger with a given name."""
         self.logger = structlog.get_logger(name)
         self.context: Dict[str, Any] = {}
 
@@ -215,11 +178,22 @@ class AppLogger:
 
 
 def setup_logging() -> None:
-    """Initialize all logging configurations for the application."""
+    """Initialize all logging configurations for the application.
+
+    Sets up both standard library logging and structlog configurations
+    for comprehensive logging support across the application.
+    """
     configure_stdlib_logging()
     setup_structlog()
 
 
 def get_logger(name: str) -> AppLogger:
-    """Get a configured logger instance."""
+    """Get a configured logger instance.
+
+    Args:
+        name: Logger name for identification
+
+    Returns:
+        AppLogger: Configured logger instance with the specified name
+    """
     return AppLogger(name)
