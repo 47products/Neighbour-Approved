@@ -13,6 +13,7 @@ CORS_ORIGINS=["http://localhost:5173","http://localhost:8000"]
 ```
 
 Where:
+
 - `http://localhost:5173` - Vue3 development server (default Vite port)
 - `http://localhost:8000` - FastAPI backend server
 

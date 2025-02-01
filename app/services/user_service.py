@@ -31,7 +31,9 @@ from app.db.repositories.user_repository import UserRepository
 from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
 
 
-class UserService(BaseService[User, UserCreate, UserUpdate], IUserService):
+class UserService(
+    BaseService[User, UserCreate, UserUpdate, UserRepository], IUserService
+):
     """
     Service for managing user-related operations and business logic.
 

@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
-from app.db.config import Settings
+from app.core.config import Settings
 
 # Initialize settings from environment
 settings = Settings()

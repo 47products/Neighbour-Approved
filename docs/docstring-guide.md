@@ -17,6 +17,7 @@ Module docstrings appear at the beginning of a file and describe the module's pu
 5. Version information if relevant
 
 Example:
+
 ```python
 """
 User authentication module for the Neighbour Approved application.
@@ -53,6 +54,7 @@ Class docstrings describe a class's purpose, behavior, and attributes. They shou
 6. Type parameters for generic classes
 
 Example:
+
 ```python
 class UserRepository:
     """
@@ -93,6 +95,7 @@ Method docstrings should describe what a method does, its parameters, return val
 6. Any important notes or warnings
 
 Example:
+
 ```python
 async def create_user(self, data: UserCreate) -> User:
     """
@@ -137,6 +140,7 @@ async def create_user(self, data: UserCreate) -> User:
 Property docstrings should be concise but clear about what the property represents:
 
 Example:
+
 ```python
 @property
 def full_name(self) -> str:
@@ -161,6 +165,7 @@ While docstrings document the public interface, comments explain implementation 
 4. Document temporary solutions or workarounds
 
 Example:
+
 ```python
 def calculate_rating_statistics(self, ratings: List[int]) -> Dict[str, float]:
     # Filter out invalid ratings (outside 1-5 range)
@@ -248,4 +253,4 @@ Configure these tools to maintain consistent documentation standards across the 
 
 ## Conclusion
 
-Effective documentation through docstrings and comments is crucial for maintaining and scaling Python applications. Following these guidelines ensures that documentation remains valuable and maintainable throughout a project's lifecycle. Remember that documentation is a form of communication with future developers (including yourself), so clarity and accuracy should be prioritized over verbosity.
+Effective documentation through docstrings and comments is crucial for maintaining and scaling Python applications. Following these guidelines ensures that documentation remains valuable and maintainable throughout a project's lifecycle. Remember that documentation is a form of communication with future developers (including yourself), so clarity and accuracy should be prioritized over verbosity

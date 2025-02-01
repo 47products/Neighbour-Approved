@@ -12,7 +12,10 @@
         }
     ],
     "python.testing.pytestArgs": [
-        "tests"
+        "--cov=app",
+        "--cov-config=.coveragerc",
+        "--cov-report=term-missing",
+        "--cov-report=xml"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true
