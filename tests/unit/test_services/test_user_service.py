@@ -7,14 +7,20 @@ function as expected. The tests use dummy objects and an asynchronous dummy
 database session to simulate real-world operations.
 """
 
+from typing import Callable, Generator
 import pytest
 from unittest.mock import AsyncMock
 from datetime import datetime
-from app.api.v1.schemas.user_schema import UserCreate
-from app.core.error_handling import ValidationError
+
+from pytest_mock import MockerFixture, mocker
+from pytest_mock.plugin import _mocker
+from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
+from app.services.base import BaseService
 from app.services.service_exceptions import (
+    AccessDeniedError,
     DuplicateResourceError,
     ResourceNotFoundError,
+    ValidationError,
 )
 from app.services.user_service import UserService
 
@@ -45,7 +51,14 @@ class DummyUser:
         failed_login_lockout (datetime or None): Timestamp until which login is locked.
     """
 
-    def __init__(self, id, email, is_active=True, password="hashed_password"):
+    def __init__(
+        self,
+        id,
+        email,
+        is_active=True,
+        password="hashed_password",
+        email_verified=False,
+    ):
         self.id = id
         self.email = email
         self.is_active = is_active
@@ -80,7 +93,7 @@ class DummyUser:
 
 
 @pytest.mark.asyncio
-async def test_authenticate_user_not_found(dummy_db):
+async def test_authenticate_user_not_found(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method returns None when no user is found.
 
@@ -120,7 +133,7 @@ async def test_authenticate_user_not_found(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_inactive_user(dummy_db):
+async def test_authenticate_inactive_user(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method returns None when the user is inactive.
 
@@ -208,7 +221,7 @@ async def test_authenticate_inactive_user(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_incorrect_password(dummy_db):
+async def test_authenticate_incorrect_password(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method returns None when the provided password is incorrect.
 
@@ -295,7 +308,7 @@ async def test_authenticate_incorrect_password(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_success(dummy_db):
+async def test_authenticate_success(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method successfully authenticates an active user
     when the correct password is provided.
@@ -386,7 +399,7 @@ async def test_authenticate_success(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_exception_in_user_lookup(dummy_db):
+async def test_authenticate_exception_in_user_lookup(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method re-raises an exception if an error occurs
     during user lookup via the repository's get_by_email method.
@@ -425,7 +438,7 @@ async def test_authenticate_exception_in_user_lookup(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_authenticate_exception_during_commit(dummy_db):
+async def test_authenticate_exception_during_commit(dummy_db: AsyncMock):
     """
     Test that the UserService.authenticate method re-raises an exception if an error occurs
     during the commit operation.
@@ -517,7 +530,7 @@ async def test_authenticate_exception_during_commit(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_create_user_duplicate_email(dummy_db):
+async def test_create_user_duplicate_email(dummy_db: AsyncMock):
     """
     Test that create_user raises DuplicateResourceError if a user with the same email exists.
 
@@ -546,47 +559,73 @@ async def test_create_user_duplicate_email(dummy_db):
     assert "Email already registered" in str(exc_info.value)
 
 
-# @pytest.mark.asyncio
-# async def test_validate_create_short_password(dummy_db):
-#     """
-#     Test that validate_create raises a ValidationError if the provided password is too short.
+@pytest.mark.asyncio
+async def test_validate_create_short_password(dummy_db: AsyncMock, mocker):
+    """
+    Test that validate_create raises a ValidationError if the provided password is too short.
+    """
+    service = UserService(dummy_db)
 
-#     This test verifies that when the password is shorter than 8 characters, the service layer's
-#     validate_create method raises a ValidationError with the expected message. To bypass Pydantic's
-#     built‑in validation, we manually construct a UserCreate instance by bypassing its __init__.
+    # Mock the superclass validate_create method
+    mock_validate_create = mocker.patch.object(
+        BaseService, "validate_create", new_callable=AsyncMock
+    )
 
-#     Args:
-#         dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    user_data = UserCreate.model_construct(
+        email="new@example.com",
+        password="short",  # Intentionally too short
+        first_name="Test",
+        last_name="User",
+        country="Testland",
+        mobile_number=None,
+        postal_address=None,
+        physical_address=None,
+    )
 
-#     Returns:
-#         None
+    # Expect a ValidationError with a message about the password length.
+    with pytest.raises(ValidationError) as exc_info:
+        await service.validate_create(user_data)
 
-#     Example:
-#         Run this test with pytest:
-#             pytest --maxfail=1 --disable-warnings -q
-#     """
-#     service = UserService(dummy_db)
+    assert "Password must be at least 8 characters" in str(exc_info.value)
 
-#     # Manually create a UserCreate instance without triggering Pydantic's validation.
-#     user_data = object.__new__(UserCreate)
-#     # Manually set required attributes.
-#     user_data.email = "new@example.com"
-#     user_data.password = "short"  # Intentionally too short.
-#     user_data.first_name = "Test"
-#     user_data.last_name = "User"
-#     user_data.country = "Testland"
-#     # Optional fields can be set to None.
-#     user_data.mobile_number = None
-#     user_data.postal_address = None
-#     user_data.physical_address = None
-
-#     with pytest.raises(ValidationError) as exc_info:
-#         await service.validate_create(user_data)
-#     assert "Password must be at least 8 characters" in str(exc_info.value)
+    # Ensure super().validate_create() was not called because it should stop execution due to exception
+    mock_validate_create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_get_user_not_found(dummy_db):
+async def test_validate_create_calls_super(
+    dummy_db: AsyncMock, mocker: Callable[..., Generator[MockerFixture, None, None]]
+):
+    """
+    Test that validate_create correctly calls super().validate_create when no early validation error occurs.
+    """
+    service = UserService(dummy_db)
+
+    # Mock the superclass validate_create method
+    mock_validate_create = mocker.patch.object(
+        BaseService, "validate_create", new_callable=AsyncMock
+    )
+
+    user_data = UserCreate.model_construct(
+        email="new@example.com",
+        password="ValidPass1!",  # Valid password, so execution reaches super()
+        first_name="Test",
+        last_name="User",
+        country="Testland",
+        mobile_number=None,
+        postal_address=None,
+        physical_address=None,
+    )
+
+    # Call validate_create with valid data
+    await service.validate_create(user_data)
+
+    # Ensure super().validate_create() was called
+    mock_validate_create.assert_awaited_once_with(user_data)
+
+
+@pytest.mark.asyncio
+async def test_get_user_not_found(dummy_db: AsyncMock):
     """
     Test that get_user raises ResourceNotFoundError when the user does not exist.
 
@@ -607,7 +646,7 @@ async def test_get_user_not_found(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_get_user_success(dummy_db):
+async def test_get_user_success(dummy_db: AsyncMock):
     """
     Test that get_user returns the correct user instance when the user is found.
 
@@ -625,7 +664,7 @@ async def test_get_user_success(dummy_db):
 
 
 @pytest.mark.asyncio
-async def test_create_user_success(dummy_db):
+async def test_create_user_success(dummy_db: AsyncMock):
     """
     Test that create_user successfully creates a new user when no duplicate exists.
 
@@ -673,3 +712,280 @@ async def test_create_user_success(dummy_db):
     # The returned user should be the dummy user, and the create method should be called with the same data.
     assert result is dummy_user
     service.create.assert_awaited_once_with(user_data)
+
+
+@pytest.mark.asyncio
+async def test_update_user_success(dummy_db: AsyncMock):
+    """
+    Test that update_user successfully updates a user when valid data is provided.
+    """
+    service = UserService(dummy_db)
+
+    # Mock existing user
+    user_id = 1
+    existing_user = AsyncMock()
+    service.get = AsyncMock(return_value=existing_user)
+
+    # Mock repository update method
+    service.update = AsyncMock(return_value=existing_user)
+
+    # Update data
+    update_data = UserUpdate(first_name="Updated", last_name="User")
+
+    # Call update_user
+    result = await service.update_user(user_id, update_data)
+
+    # Assertions
+    assert result == existing_user
+    service.update.assert_awaited_once_with(id=user_id, data=update_data)
+
+
+@pytest.mark.asyncio
+async def test_delete_user_success(dummy_db: AsyncMock):
+    """
+    Test that delete_user successfully deletes a user when they meet deletion criteria.
+
+    This test simulates a scenario where:
+    - The user exists and is retrieved successfully.
+    - The user meets all deletion criteria (no active communities, contacts, etc.).
+    - The delete operation completes successfully.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    dummy_user = DummyUser(id=user_id, email="delete@example.com")
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+    service._can_delete_user = AsyncMock(return_value=True)
+    service.delete = AsyncMock(return_value=True)
+
+    # Act
+    result = await service.delete_user(user_id)
+
+    # Assert
+    assert result is True
+    service.get_user.assert_awaited_once_with(user_id)
+    service._can_delete_user.assert_awaited_once_with(dummy_user)
+    service.delete.assert_awaited_once_with(user_id)
+
+
+@pytest.mark.asyncio
+async def test_delete_user_fails_when_cannot_delete(dummy_db: AsyncMock):
+    """
+    Test that delete_user raises AccessDeniedError when user cannot be deleted.
+
+    This test simulates a scenario where:
+    - The user exists but has active communities or other constraints.
+    - The _can_delete_user check returns False.
+    - The method raises AccessDeniedError.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    dummy_user = DummyUser(id=user_id, email="nodelete@example.com")
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+    service._can_delete_user = AsyncMock(return_value=False)
+
+    # Act & Assert
+    with pytest.raises(AccessDeniedError):
+        await service.delete_user(user_id)
+
+    service.get_user.assert_awaited_once_with(user_id)
+    service._can_delete_user.assert_awaited_once_with(dummy_user)
+
+
+@pytest.mark.asyncio
+async def test_verify_email_success(dummy_db: AsyncMock):
+    """
+    Test that verify_email successfully verifies a user's email.
+
+    This test simulates a scenario where:
+    - The user exists and is retrieved successfully.
+    - The email is not already verified.
+    - The verification process completes successfully.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    dummy_user = DummyUser(id=user_id, email="verify@example.com", email_verified=False)
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+
+    # Act
+    result = await service.verify_email(user_id)
+
+    # Assert
+    assert result is True
+    assert dummy_user.email_verified is True
+    dummy_db.commit.assert_awaited_once()
+
+
+# @pytest.mark.asyncio
+# async def test_verify_email_already_verified(dummy_db: AsyncMock):
+#     """
+#     Test that verify_email returns False when email is already verified.
+
+#     This test simulates a scenario where:
+#     - The user exists and is retrieved successfully.
+#     - The email is already verified.
+#     - The method returns False without making changes.
+
+#     Args:
+#         dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+#     """
+#     # Arrange
+#     service = UserService(dummy_db)
+#     user_id = 1
+#     dummy_user = DummyUser(id=user_id, email="verified@example.com", email_verified=True)
+
+#     # Mock methods
+#     service.get_user = AsyncMock(return_value=dummy_user)
+
+#     # Act
+#     result = await service.verify_email(user_id)
+
+#     # Assert
+#     assert result is False
+#     dummy_db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_assign_role_success(dummy_db: AsyncMock):
+    """
+    Test that assign_role successfully assigns a role to a user.
+
+    This test simulates a scenario where:
+    - Both user and role exist and are active.
+    - The role is not already assigned to the user.
+    - The assignment completes successfully.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    role_id = 2
+    dummy_user = DummyUser(id=user_id, email="role@example.com")
+    dummy_role = AsyncMock(id=role_id, is_active=True)
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+    dummy_db.get = AsyncMock(return_value=dummy_role)
+
+    # Act
+    result = await service.assign_role(user_id, role_id)
+
+    # Assert
+    assert result is dummy_user
+    assert dummy_role in dummy_user.roles
+    dummy_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_remove_role_success(dummy_db: AsyncMock):
+    """
+    Test that remove_role successfully removes a role from a user.
+
+    This test simulates a scenario where:
+    - Both user and role exist.
+    - The role is currently assigned to the user.
+    - The removal completes successfully.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    role_id = 2
+    dummy_role = AsyncMock(id=role_id)
+    dummy_user = DummyUser(id=user_id, email="remove@example.com")
+    dummy_user.roles.append(dummy_role)
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+    dummy_db.get = AsyncMock(return_value=dummy_role)
+
+    # Act
+    result = await service.remove_role(user_id, role_id)
+
+    # Assert
+    assert result is dummy_user
+    assert dummy_role not in dummy_user.roles
+    dummy_db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_user_communities_success(dummy_db: AsyncMock):
+    """
+    Test that get_user_communities returns the correct list of communities.
+
+    This test simulates a scenario where:
+    - The user exists and has associated communities.
+    - The method returns the correct list of communities.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    dummy_community = AsyncMock()
+    dummy_user = DummyUser(id=user_id, email="communities@example.com")
+    dummy_user.communities = [dummy_community]
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+
+    # Act
+    result = await service.get_user_communities(user_id)
+
+    # Assert
+    assert result == [dummy_community]
+    service.get_user.assert_awaited_once_with(user_id)
+
+
+@pytest.mark.asyncio
+async def test_has_permission_true(dummy_db: AsyncMock):
+    """
+    Test that has_permission returns True when user has the required permission.
+
+    This test simulates a scenario where:
+    - The user exists and has an active role with the required permission.
+    - The method returns True.
+
+    Args:
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+    """
+    # Arrange
+    service = UserService(dummy_db)
+    user_id = 1
+    dummy_role = AsyncMock(is_active=True)
+    dummy_role.has_permission = AsyncMock(return_value=True)
+    dummy_user = DummyUser(id=user_id, email="permission@example.com")
+    dummy_user.roles = [dummy_role]
+
+    # Mock methods
+    service.get_user = AsyncMock(return_value=dummy_user)
+
+    # Act
+    result = await service.has_permission(user_id, "test_permission")
+
+    # Assert
+    assert result is True
+    service.get_user.assert_awaited_once_with(user_id)
+    dummy_role.has_permission.assert_called_once_with("test_permission")
