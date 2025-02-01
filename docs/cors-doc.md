@@ -35,6 +35,7 @@ CORS_ORIGINS=["https://app.neighbourapproved.com","https://api.neighbourapproved
 ```
 
 Consider:
+
 - Always use HTTPS in production
 - Limit origins to specific domains
 - Avoid using wildcards (`*`)
