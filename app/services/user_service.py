@@ -7,6 +7,7 @@ and user lifecycle operations. It ensures proper separation of concerns
 by encapsulating business rules and workflows separate from data access.
 """
 
+import asyncio
 from datetime import datetime, UTC, timedelta
 from typing import List, Optional, Tuple, cast
 import bcrypt
@@ -810,5 +811,11 @@ class UserService(
             return False
 
         return any(
-            role.has_permission(permission) for role in user.roles if role.is_active
+            await asyncio.gather(
+                *(
+                    role.has_permission(permission)
+                    for role in user.roles
+                    if role.is_active
+                )
+            )
         )

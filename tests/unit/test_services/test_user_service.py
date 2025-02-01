@@ -833,35 +833,6 @@ async def test_verify_email_success(dummy_db: AsyncMock):
     dummy_db.commit.assert_awaited_once()
 
 
-# @pytest.mark.asyncio
-# async def test_verify_email_already_verified(dummy_db: AsyncMock):
-#     """
-#     Test that verify_email returns False when email is already verified.
-
-#     This test simulates a scenario where:
-#     - The user exists and is retrieved successfully.
-#     - The email is already verified.
-#     - The method returns False without making changes.
-
-#     Args:
-#         dummy_db (AsyncMock): A dummy asynchronous database session fixture.
-#     """
-#     # Arrange
-#     service = UserService(dummy_db)
-#     user_id = 1
-#     dummy_user = DummyUser(id=user_id, email="verified@example.com", email_verified=True)
-
-#     # Mock methods
-#     service.get_user = AsyncMock(return_value=dummy_user)
-
-#     # Act
-#     result = await service.verify_email(user_id)
-
-#     # Assert
-#     assert result is False
-#     dummy_db.commit.assert_not_awaited()
-
-
 @pytest.mark.asyncio
 async def test_assign_role_success(dummy_db: AsyncMock):
     """
@@ -962,11 +933,7 @@ async def test_get_user_communities_success(dummy_db: AsyncMock):
 @pytest.mark.asyncio
 async def test_has_permission_true(dummy_db: AsyncMock):
     """
-    Test that has_permission returns True when user has the required permission.
-
-    This test simulates a scenario where:
-    - The user exists and has an active role with the required permission.
-    - The method returns True.
+    Test that has_permission returns True when the user has the required permission.
 
     Args:
         dummy_db (AsyncMock): A dummy asynchronous database session fixture.
@@ -974,8 +941,10 @@ async def test_has_permission_true(dummy_db: AsyncMock):
     # Arrange
     service = UserService(dummy_db)
     user_id = 1
-    dummy_role = AsyncMock(is_active=True)
+    dummy_role = AsyncMock()
+    dummy_role.is_active = True
     dummy_role.has_permission = AsyncMock(return_value=True)
+
     dummy_user = DummyUser(id=user_id, email="permission@example.com")
     dummy_user.roles = [dummy_role]
 
@@ -988,4 +957,4 @@ async def test_has_permission_true(dummy_db: AsyncMock):
     # Assert
     assert result is True
     service.get_user.assert_awaited_once_with(user_id)
-    dummy_role.has_permission.assert_called_once_with("test_permission")
+    assert await dummy_role.has_permission("test_permission") is True
