@@ -10,4 +10,4 @@ logs/
 .scannerwork
 .coverage
 .coveragerc
-.coverage.xml
+coverage.xml

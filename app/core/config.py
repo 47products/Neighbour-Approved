@@ -90,6 +90,9 @@ class Settings(BaseSettings):
         False,
         description="Enable SQL query logging",
     )
+    ENABLE_SQL_ECHO: bool = Field(
+        default=False, description="Enable SQL query logging for debugging purposes"
+    )
 
     model_config = {
         "env_file": ".env",

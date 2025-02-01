@@ -7,18 +7,18 @@ leaving business logic to the service layer.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
-from sqlalchemy import select, or_, and_, func
+from typing import Optional, List
+from sqlalchemy import select, or_, and_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.db.models.role_model import Role
 from app.db.repositories.repository_implementation import BaseRepository
 from app.db.models.user_model import User
 from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
 from app.db.errors import (
     QueryError,
     IntegrityError,
-    ValidationError,
 )
 
 
@@ -304,3 +304,35 @@ class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
                 message="Failed to update user statuses",
                 details={"user_ids": user_ids, "error": str(e)},
             ) from e
+
+    async def assign_role(self, user_id: int, role_id: int) -> bool:
+        """
+        Assign a role to a user.
+
+        Args:
+            user_id (int): The ID of the user.
+            role_id (int): The ID of the role.
+
+        Returns:
+            bool: True if the role was assigned, False otherwise.
+        """
+        try:
+            user = await self.get(user_id)
+            if not user:
+                return False
+
+            role = await self.db.get(Role, role_id)
+            if not role:
+                return False
+
+            if role not in user.roles:
+                user.roles.append(role)
+                await self.db.commit()
+                return True
+
+            return False
+        except Exception as e:
+            self._logger.error(
+                "assign_role_failed", user_id=user_id, role_id=role_id, error=str(e)
+            )
+            return False

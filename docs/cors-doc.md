@@ -13,6 +13,7 @@ CORS_ORIGINS=["http://localhost:5173","http://localhost:8000"]
 ```
 
 Where:
+
 - `http://localhost:5173` - Vue3 development server (default Vite port)
 - `http://localhost:8000` - FastAPI backend server
 
@@ -34,6 +35,7 @@ CORS_ORIGINS=["https://app.neighbourapproved.com","https://api.neighbourapproved
 ```
 
 Consider:
+
 - Always use HTTPS in production
 - Limit origins to specific domains
 - Avoid using wildcards (`*`)
