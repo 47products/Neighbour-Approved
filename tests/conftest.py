@@ -4,7 +4,8 @@ Shared test fixtures for the Neighbour Approved application.
 This module provides reusable fixtures for unit and integration tests.
 Key fixtures include:
 - test_client: Test client for the FastAPI app.
-- dummy_db: Dummy database session fixture using AsyncMock to simulate asynchronous database operations.
+- dummy_db: Dummy database session fixture using AsyncMock to simulate asynchronous 
+database operations.
 
 Usage:
     In tests, simply import the fixture by its name.

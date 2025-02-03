@@ -12,8 +12,7 @@ import pytest
 from unittest.mock import AsyncMock
 from datetime import datetime
 
-from pytest_mock import MockerFixture, mocker
-from pytest_mock.plugin import _mocker
+from pytest_mock import MockerFixture
 from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
 from app.services.base import BaseService
 from app.services.service_exceptions import (
@@ -223,14 +222,17 @@ async def test_authenticate_inactive_user(dummy_db: AsyncMock):
 @pytest.mark.asyncio
 async def test_authenticate_incorrect_password(dummy_db: AsyncMock):
     """
-    Test that the UserService.authenticate method returns None when the provided password is incorrect.
+    Test that the UserService.authenticate method returns None when the provided password
+    is incorrect.
 
-    This test simulates the scenario where a user is found and is active, but the password verification fails.
-    The dummy user's verify_password method is implemented to always return False, thereby simulating an incorrect password.
-    The expected behavior is that the authenticate method returns None without performing a database commit.
+    This test simulates the scenario where a user is found and is active, but the password
+    verification fails. The dummy user's verify_password method is implemented to always return
+    False, thereby simulating an incorrect password. The expected behavior is that the
+    authenticate method returns None without performing a database commit.
 
     Args:
-        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating the database operations.
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating the
+        database operations.
 
     Returns:
         None
@@ -320,7 +322,8 @@ async def test_authenticate_success(dummy_db: AsyncMock):
     - The database commit method is called to persist the change.
 
     Args:
-        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating the DB operations.
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating
+        the DB operations.
 
     Returns:
         None
@@ -364,7 +367,8 @@ async def test_authenticate_success(dummy_db: AsyncMock):
 
         def verify_password(self, password: str) -> bool:
             """
-            Simulate password verification by returning True if the password matches 'correct_password'.
+            Simulate password verification by returning True if the password matches
+            'correct_password'.
 
             Args:
                 password (str): The plain text password to verify.
@@ -409,7 +413,8 @@ async def test_authenticate_exception_in_user_lookup(dummy_db: AsyncMock):
     logged, and then re-raised by the authenticate method.
 
     Args:
-        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating database operations.
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating
+        database operations.
 
     Returns:
         None
@@ -449,10 +454,12 @@ async def test_authenticate_exception_during_commit(dummy_db: AsyncMock):
     - The user's last_login attribute is updated.
     - However, an exception is raised during the database commit operation.
 
-    The expected behavior is that the exception is re-raised, causing the authenticate method to fail.
+    The expected behavior is that the exception is re-raised, causing the authenticate
+    method to fail.
 
     Args:
-        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating the DB operations.
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture simulating
+        the DB operations.
 
     Returns:
         None
@@ -588,7 +595,6 @@ async def test_validate_create_short_password(dummy_db: AsyncMock, mocker):
 
     assert "Password must be at least 8 characters" in str(exc_info.value)
 
-    # Ensure super().validate_create() was not called because it should stop execution due to exception
     mock_validate_create.assert_not_awaited()
 
 
@@ -597,7 +603,8 @@ async def test_validate_create_calls_super(
     dummy_db: AsyncMock, mocker: Callable[..., Generator[MockerFixture, None, None]]
 ):
     """
-    Test that validate_create correctly calls super().validate_create when no early validation error occurs.
+    Test that validate_create correctly calls super().validate_create when no early validation
+    error occurs.
     """
     service = UserService(dummy_db)
 
@@ -709,8 +716,9 @@ async def test_create_user_success(dummy_db: AsyncMock):
     result = await service.create_user(user_data)
 
     # Assert:
-    # The returned user should be the dummy user, and the create method should be called with the same data.
+    # The returned user should be the dummy user
     assert result is dummy_user
+    # The create method should be called with the same data.
     service.create.assert_awaited_once_with(user_data)
 
 
@@ -958,3 +966,39 @@ async def test_has_permission_true(dummy_db: AsyncMock):
     assert result is True
     service.get_user.assert_awaited_once_with(user_id)
     assert await dummy_role.has_permission("test_permission") is True
+
+
+@pytest.mark.asyncio
+async def test_has_permission_false(mocker: MockerFixture, dummy_db: AsyncMock):
+    """
+    Test that UserService.has_permission returns False when the user lacks the required permission.
+
+    This test simulates a scenario where a user does not have the necessary role-based permission.
+    The expected behavior is that the has_permission method returns False.
+
+    Args:
+        mocker (MockerFixture): Pytest mock fixture to mock dependencies.
+        dummy_db (AsyncMock): A dummy asynchronous database session fixture.
+
+    Returns:
+        None
+
+    Example:
+        Run this test with pytest:
+            pytest --maxfail=1 --disable-warnings -q
+    """
+    # Arrange:
+    service = UserService(dummy_db)
+
+    # Create a dummy user without the required role.
+    dummy_user = DummyUser(id=1, email="test@example.com")
+    dummy_user.roles = []  # User has no roles assigned
+
+    # Mock get_user to return the dummy user.
+    mocker.patch.object(service, "get_user", AsyncMock(return_value=dummy_user))
+
+    # Act:
+    result = await service.has_permission(user_id=1, permission="edit_user")
+
+    # Assert:
+    assert result is False
