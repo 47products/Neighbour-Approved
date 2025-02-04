@@ -29,17 +29,30 @@ LOGS_DIR.mkdir(exist_ok=True)
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     """Handle application lifecycle events with enhanced logging."""
+
     # Startup
+    from app.services.service_registration import register_core_services
+
     logger.info(
         "application_starting",
         environment=os.getenv("ENVIRONMENT", "development"),
         debug_mode=application.debug,
     )
 
-    yield  # Application running
+    try:
+        # Register services only if not already registered
+        logger.info("initializing_core_services")
+        register_core_services()
+        logger.info("core_services_initialized")
+    except Exception as e:
+        logger.error("service_initialization_failed", error=str(e))
+        raise
 
-    # Shutdown
-    logger.info("application_shutdown")
+    try:
+        yield  # Application running
+    finally:
+        # Shutdown
+        logger.info("application_shutdown")
 
 
 def create_application() -> FastAPI:

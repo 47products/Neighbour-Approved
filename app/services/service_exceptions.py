@@ -326,3 +326,79 @@ class RoleAssignmentError(ServiceError):
             status.HTTP_409_CONFLICT,
             details,
         )
+
+
+class AuthenticationError(ServiceError):
+    """Exception for authentication failures.
+
+    Raised when user authentication fails, such as incorrect credentials
+    or invalid authentication tokens.
+    """
+
+    def __init__(
+        self,
+        message: str = "Authentication failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize authentication error.
+
+        Args:
+            message: Description of the authentication failure
+            details: Additional error context
+        """
+        super().__init__(
+            message,
+            "AUTHENTICATION_FAILED",
+            status.HTTP_401_UNAUTHORIZED,
+            details,
+        )
+
+
+class EmailVerificationError(ServiceError):
+    """Exception for email verification failures.
+
+    Raised when email verification fails due to invalid or expired tokens.
+    """
+
+    def __init__(
+        self,
+        message: str = "Email verification failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize email verification error.
+
+        Args:
+            message: Description of the verification failure
+            details: Additional error context
+        """
+        super().__init__(
+            message,
+            "EMAIL_VERIFICATION_FAILED",
+            status.HTTP_400_BAD_REQUEST,
+            details,
+        )
+
+
+class UserManagementError(ServiceError):
+    """Exception for user management operation failures.
+
+    Raised when user management operations fail due to business rule violations.
+    """
+
+    def __init__(
+        self,
+        message: str = "User management operation failed",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize user management error.
+
+        Args:
+            message: Description of the operation failure
+            details: Additional error context
+        """
+        super().__init__(
+            message,
+            "USER_MANAGEMENT_ERROR",
+            status.HTTP_400_BAD_REQUEST,
+            details,
+        )
