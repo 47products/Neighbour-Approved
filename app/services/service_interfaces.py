@@ -10,7 +10,7 @@ ensuring consistent implementation patterns across different service types.
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Protocol, TypeVar
+from typing import Any, Dict, List, Optional, Protocol, Tuple, TypeVar
 from pydantic import EmailStr
 
 from app.api.v1.schemas.user_schema import UserCreate, UserUpdate
@@ -31,37 +31,6 @@ from app.db.models.service_model import Service
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType")
 UpdateSchemaType = TypeVar("UpdateSchemaType")
-
-
-class IUserService(Protocol):
-    """Interface defining user management operations."""
-
-    async def authenticate(self, email: EmailStr, password: str) -> Optional[User]:
-        """Authenticate a user with email and password."""
-
-    async def create_user(self, data: UserCreate) -> User:
-        """Create a new user with validation."""
-
-    async def get_user(self, user_id: int) -> Optional[User]:
-        """Retrieve a user by ID."""
-
-    async def update_user(self, user_id: int, data: UserUpdate) -> Optional[User]:
-        """Update user information."""
-
-    async def delete_user(self, user_id: int) -> bool:
-        """Delete a user account."""
-
-    async def verify_email(self, user_id: int) -> bool:
-        """Mark user's email as verified."""
-
-    async def assign_role(self, user_id: int, role_id: int) -> Optional[User]:
-        """Assign a role to a user."""
-
-    async def remove_role(self, user_id: int, role_id: int) -> Optional[User]:
-        """Remove a role from a user."""
-
-    async def get_user_communities(self, user_id: int) -> List[Community]:
-        """Get communities associated with user."""
 
 
 class ICommunityService(Protocol):
@@ -245,3 +214,57 @@ class IAuditService(Protocol):
         end_date: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
         """Get audit log entries for a resource."""
+
+
+class IAuthenticationService(Protocol):
+    """Interface defining user authentication operations."""
+
+    async def authenticate(self, email: EmailStr, password: str) -> Optional[User]:
+        """Authenticate a user with email and password."""
+
+    async def authenticate_user(
+        self, email: EmailStr, password: str, track_login: bool = True
+    ) -> Tuple[User, bool]:
+        """Complete authentication workflow returning user and first login status."""
+
+
+class IEmailVerificationService(Protocol):
+    """Interface defining email verification operations."""
+
+    async def verify_email(self, user_id: int) -> bool:
+        """Mark a user's email as verified."""
+
+
+class IRoleManagementService(Protocol):
+    """Interface defining role management operations."""
+
+    async def assign_role(self, user_id: int, role_id: int) -> User:
+        """Assign a role to a user."""
+
+    async def assign_roles(self, user_id: int, role_ids: List[int]) -> User:
+        """Assign multiple roles to a user."""
+
+    async def remove_role(self, user_id: int, role_id: int) -> User:
+        """Remove a role from a user."""
+
+    async def remove_roles(self, user_id: int, role_ids: List[int]) -> User:
+        """Remove multiple roles from a user."""
+
+    async def get_user_roles(self, user_id: int) -> List[Role]:
+        """Get all active roles assigned to a user."""
+
+    async def has_permission(self, user_id: int, permission: str) -> bool:
+        """Check if user has a specific permission."""
+
+
+class IUserManagementService(Protocol):
+    """Interface defining user management operations."""
+
+    async def create_user(self, data: UserCreate) -> User:
+        """Create a new user account."""
+
+    async def delete_user(self, user_id: int) -> bool:
+        """Delete an existing user account."""
+
+    async def get_user_communities(self, user_id: int) -> List[Community]:
+        """Get communities associated with a user."""
