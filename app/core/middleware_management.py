@@ -103,14 +103,25 @@ class BaseMiddleware(BaseHTTPMiddleware, Generic[ConfigType]):
         """
         raise NotImplementedError("Middleware must implement process method")
 
-    async def _execute_pipeline(
+    async def execute_pipeline(
         self,
         request: Request,
         call_next: RequestResponseEndpoint,
         pipeline_position: int,
         middleware_chain: List["BaseMiddleware"],
     ) -> Response:
-        """Execute the middleware pipeline with proper ordering and error handling."""
+        """
+        Execute the middleware pipeline with proper ordering and error handling.
+
+        Args:
+            request: The incoming HTTP request
+            call_next: The next middleware or endpoint to call
+            pipeline_position: Current position in the middleware chain
+            middleware_chain: List of middleware instances to execute
+
+        Returns:
+            Response: The processed HTTP response
+        """
         try:
             if pipeline_position == len(middleware_chain):
                 return await call_next(request)
@@ -118,7 +129,7 @@ class BaseMiddleware(BaseHTTPMiddleware, Generic[ConfigType]):
             next_middleware = middleware_chain[pipeline_position]
 
             async def chain_next(req: Request) -> Response:
-                return await self._execute_pipeline(
+                return await next_middleware.execute_pipeline(
                     req, call_next, pipeline_position + 1, middleware_chain
                 )
 
@@ -153,31 +164,6 @@ class BaseMiddleware(BaseHTTPMiddleware, Generic[ConfigType]):
                 error=str(e),
                 error_type=type(e).__name__,
                 pipeline_position=pipeline_position,
-            )
-            raise
-
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        """Dispatch method required by BaseHTTPMiddleware."""
-        if request.url.path in self.config.skip_paths:
-            return await call_next(request)
-
-        try:
-            self._logger.debug("middleware_start", path=request.url.path)
-            response = await self.process(request, call_next)
-            self._logger.debug(
-                "middleware_complete",
-                path=request.url.path,
-                status_code=response.status_code,
-            )
-            return response
-        except Exception as e:
-            self._logger.error(
-                "middleware_error",
-                error=str(e),
-                error_type=type(e).__name__,
-                path=request.url.path,
             )
             raise
 
@@ -249,16 +235,27 @@ class MiddlewareRegistry:
     async def execute_middleware_chain(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        """Execute the complete middleware chain for a request."""
+        """
+        Execute the complete middleware chain for a request.
+
+        Args:
+            request: The incoming HTTP request
+            call_next: The next middleware or endpoint to call
+
+        Returns:
+            Response: The processed HTTP response
+
+        Note:
+            This method initialises and executes the middleware chain in priority order.
+        """
         middleware_chain = [
             middleware_class(app=None, config=self._middlewares[middleware_class])
             for middleware_class in self.get_ordered_middlewares()
         ]
 
         if middleware_chain:
-            return await middleware_chain[
-                0
-            ]._execute_pipeline(  # pylint: disable=protected-access
+            # Use the first middleware's public method to start the chain
+            return await middleware_chain[0].execute_pipeline(
                 request, call_next, 0, middleware_chain
             )
 

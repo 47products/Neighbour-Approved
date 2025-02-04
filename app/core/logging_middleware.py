@@ -122,6 +122,40 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
             )
             raise
 
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """
+        Dispatch method required by BaseHTTPMiddleware.
+
+        Args:
+            request: The incoming HTTP request.
+            call_next: The next middleware or endpoint in the chain.
+
+        Returns:
+            Response: The HTTP response.
+        """
+        if request.url.path in self.config.skip_paths:
+            return await call_next(request)
+
+        try:
+            self._logger.debug("middleware_start", path=request.url.path)
+            response = await self.process(request, call_next)
+            self._logger.debug(
+                "middleware_complete",
+                path=request.url.path,
+                status_code=response.status_code,
+            )
+            return response
+        except Exception as e:
+            self._logger.error(
+                "middleware_error",
+                error=str(e),
+                error_type=type(e).__name__,
+                path=request.url.path,
+            )
+            raise
+
 
 def setup_logging_middleware(app: FastAPI) -> None:
     """

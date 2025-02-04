@@ -27,6 +27,38 @@ from app.db.repositories.contact_endorsement_repository import (
 )
 
 
+class Repositories:
+    """Container for repository instances."""
+
+    def __init__(self, session):
+        """
+        Initialize repositories with database session.
+
+        Args:
+            session: Database session for repositories.
+        """
+        self.user = UserRepository(session)
+        self.community = CommunityRepository(session)
+        self.contact = ContactRepository(session)
+        self.endorsement = ContactEndorsementRepository(session)
+
+
+class Services:
+    """Container for service instances."""
+
+    def __init__(self, repositories: Repositories):
+        """
+        Initialize services with repository instances.
+
+        Args:
+            repositories: Repository container instance.
+        """
+        self.user = UserService(repositories.user)
+        self.community = CommunityService(repositories.community)
+        self.contact = ContactService(repositories.contact)
+        self.endorsement = EndorsementService(repositories.endorsement)
+
+
 class DependencyContainer:
     """
     Centralized container for dependency injection in the application.
@@ -37,23 +69,11 @@ class DependencyContainer:
 
     def __init__(self):
         self.session = create_session()
-
-        # Initialize repositories
-        self.user_repository = UserRepository(self.session)
-        self.community_repository = CommunityRepository(self.session)
-        self.contact_repository = ContactRepository(self.session)
-        self.endorsement_repository = ContactEndorsementRepository(self.session)
-
-        # Initialize services
-        self.user_service = UserService(self.user_repository)
-        self.community_service = CommunityService(self.community_repository)
-        self.contact_service = ContactService(self.contact_repository)
-        self.endorsement_service = EndorsementService(self.endorsement_repository)
+        self.repositories = Repositories(self.session)
+        self.services = Services(self.repositories)
 
     def cleanup(self):
-        """
-        Cleanup resources when the application shuts down.
-        """
+        """Cleanup resources when the application shuts down."""
         self.session.close()
 
 
@@ -77,10 +97,13 @@ def get_user_service(
     """
     Dependency injection for UserService.
 
+    Args:
+        container: The dependency container instance.
+
     Returns:
         UserService: The user service instance.
     """
-    return container.user_service
+    return container.services.user
 
 
 def get_community_service(
@@ -89,10 +112,13 @@ def get_community_service(
     """
     Dependency injection for CommunityService.
 
+    Args:
+        container: The dependency container instance.
+
     Returns:
         CommunityService: The community service instance.
     """
-    return container.community_service
+    return container.services.community
 
 
 def get_contact_service(
@@ -101,10 +127,13 @@ def get_contact_service(
     """
     Dependency injection for ContactService.
 
+    Args:
+        container: The dependency container instance.
+
     Returns:
         ContactService: The contact service instance.
     """
-    return container.contact_service
+    return container.services.contact
 
 
 def get_endorsement_service(
@@ -113,7 +142,10 @@ def get_endorsement_service(
     """
     Dependency injection for EndorsementService.
 
+    Args:
+        container: The dependency container instance.
+
     Returns:
         EndorsementService: The endorsement service instance.
     """
-    return container.endorsement_service
+    return container.services.endorsement
