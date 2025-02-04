@@ -1,3 +1,24 @@
+"""
+Notification service module for the Neighbour Approved application.
+
+This module implements the notification management system, handling all types of 
+system notifications including endorsements, verifications, and rating updates.
+It provides a structured approach to notification delivery and preference management.
+
+Key components:
+    - NotificationType: Enumeration of supported notification types
+    - NotificationPreference: Data structure for user notification settings
+    - NotificationService: Core service for notification handling
+
+Typical usage example:
+    service = NotificationService()
+    await service.send_notification(
+        NotificationType.RATING_UPDATED,
+        user_id=1,
+        data={"new_rating": 4.5}
+    )
+"""
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -7,7 +28,18 @@ from app.db.models.contact_endorsement_model import ContactEndorsement
 
 
 class NotificationType(Enum):
-    """Enumeration of notification types."""
+    """
+    Enumeration of available notification types.
+
+    This enum defines all supported notification types in the system,
+    ensuring consistent notification categorisation across the application.
+
+    Attributes:
+        ENDORSEMENT_RECEIVED: When a contact receives a new endorsement
+        ENDORSEMENT_VERIFIED: When an endorsement is verified by moderators
+        VERIFICATION_REQUESTED: When endorsement verification is needed
+        RATING_UPDATED: When a contact's rating changes
+    """
 
     ENDORSEMENT_RECEIVED = "endorsement_received"
     ENDORSEMENT_VERIFIED = "endorsement_verified"
@@ -17,7 +49,18 @@ class NotificationType(Enum):
 
 @dataclass
 class NotificationPreference:
-    """User notification preferences."""
+    """
+    User notification preferences data structure.
+
+    This class manages individual user preferences for different types of
+    notifications, allowing granular control over notification delivery.
+
+    Attributes:
+        user_id (int): Unique identifier for the user
+        verification_notifications (bool): Whether to receive verification notifications
+        rating_notifications (bool): Whether to receive rating update notifications
+        endorsement_notifications (bool): Whether to receive endorsement notifications
+    """
 
     user_id: int
     verification_notifications: bool = True
@@ -27,7 +70,20 @@ class NotificationPreference:
 
 @dataclass
 class NotificationEvent:
-    """Structured notification event data."""
+    """
+    Structured notification event data container.
+
+    This class provides a standardised structure for notification events,
+    ensuring consistent event processing throughout the system.
+
+    Attributes:
+        event_type (NotificationType): Type of notification event
+        timestamp (datetime): When the event occurred
+        recipient_id (int): ID of notification recipient
+        sender_id (Optional[int]): ID of notification sender if applicable
+        data (Dict[str, Any]): Event-specific notification data
+        metadata (Dict[str, Any]): Additional contextual information
+    """
 
     event_type: NotificationType
     timestamp: datetime
@@ -38,26 +94,54 @@ class NotificationEvent:
 
 
 class NotificationService:
-    """Service for handling system notifications."""
+    """
+    Service for handling system-wide notifications.
+
+    This service manages all aspects of notification processing including
+    delivery, preference management, and notification routing.
+
+    Typical usage example:
+        service = NotificationService()
+        await service.send_notification(
+            NotificationType.ENDORSEMENT_RECEIVED,
+            user_id=1,
+            data={"endorsement_id": 123}
+        )
+    """
 
     async def send_notification(
         self, notification_type: NotificationType, user_id: int, data: Dict[str, Any]
     ) -> None:
-        """Send notification to user."""
+        """
+        Send a notification to a specific user.
+
+        Args:
+            notification_type: Type of notification to send
+            user_id: User to receive the notification
+            data: Notification-specific content and metadata
+
+        Note:
+            This is a placeholder implementation. In a production environment,
+            this would integrate with actual notification delivery systems.
+        """
         # Implement actual notification sending
 
     async def _get_notification_preferences(self, user_id: int) -> Dict[str, bool]:
-        """Get user's notification preferences.
+        """
+        Get notification preferences for a specific user.
+
+        This method retrieves user-specific notification preferences, with defaults
+        if no custom preferences are set.
 
         Args:
             user_id: User to get preferences for
 
         Returns:
-            Dictionary of notification preferences
+            Dict[str, bool]: Dictionary of notification preferences
 
         Note:
-            Currently returns default preferences. In a real implementation,
-            this would fetch user-specific preferences from a database.
+            Current implementation returns default preferences. Production implementation
+            would fetch user-specific preferences from persistent storage.
         """
         self._logger.debug(
             "fetching_notification_preferences",
@@ -76,10 +160,17 @@ class NotificationService:
     async def _send_endorsement_notifications(
         self, endorsement: ContactEndorsement
     ) -> None:
-        """Send notifications for new endorsement creation.
+        """
+        Send notifications related to a new endorsement.
+
+        This method handles all notifications triggered by endorsement creation,
+        including owner notification and verification requests.
 
         Args:
-            endorsement: Newly created endorsement
+            endorsement: Newly created endorsement object
+
+        Note:
+            Moderators are notified if the endorsement includes both rating and comment.
         """
         # Notify contact owner
         await self._notification_service.send_notification(
