@@ -12,6 +12,7 @@ Classes:
 from typing import Optional, Tuple, cast
 from datetime import UTC, datetime, timedelta
 from pydantic import EmailStr
+from sqlalchemy.exc import SQLAlchemyError
 import structlog
 
 from app.core.error_handling import AuthenticationError
@@ -55,7 +56,7 @@ class AuthenticationService(BaseUserService):
             password: Plain text password
 
         Returns:
-            Authenticated user or None if authentication fails
+            Optional[User]: Authenticated user or None if authentication fails
 
         Raises:
             ValidationError: If login attempts exceed limit
@@ -73,10 +74,17 @@ class AuthenticationService(BaseUserService):
                 )
                 return None
 
-            # Check if user is locked out
+            # Handle lockout check separately from other authentication logic
             if user.failed_login_lockout and user.failed_login_lockout > datetime.now(
                 UTC
             ):
+                # Log before raising to maintain audit trail
+                self._logger.warning(
+                    "authentication_blocked",
+                    email=email,
+                    reason="account_locked",
+                    lockout_until=user.failed_login_lockout,
+                )
                 raise ValidationError(
                     "Account temporarily locked. Please try again later.",
                     details={"lockout_until": user.failed_login_lockout},
@@ -104,6 +112,16 @@ class AuthenticationService(BaseUserService):
             )
             return user
 
+        except SQLAlchemyError as e:
+            self._logger.error(
+                "authentication_error",
+                email=email,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            raise AuthenticationError("Authentication failed") from e
+        except ValidationError:
+            raise
         except Exception as e:
             self._logger.error(
                 "authentication_error",
@@ -111,7 +129,7 @@ class AuthenticationService(BaseUserService):
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            raise
+            raise AuthenticationError("Authentication failed") from e
 
     async def authenticate_user(
         self, email: EmailStr, password: str, track_login: bool = True
