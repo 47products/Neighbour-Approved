@@ -45,6 +45,7 @@ class NotificationType(Enum):
     ENDORSEMENT_VERIFIED = "endorsement_verified"
     VERIFICATION_REQUESTED = "verification_requested"
     RATING_UPDATED = "rating_updated"
+    CONTACT_ENDORSEMENT_VERIFIED = "contact_endorsement_verified"
 
 
 @dataclass
@@ -200,3 +201,28 @@ class NotificationService:
                         "community_name": endorsement.community.name,
                     },
                 )
+
+
+class DummyNotificationMixin:
+    # Assuming other methods are defined, including _build_notification_context and _calculate_rating_impact
+
+    async def _send_verification_notifications(self, endorsement):
+        # Build the notification context.
+        context = await self._build_notification_context(endorsement)
+
+        # Send the notification to the endorsement creator.
+        await self._notification_service.send_notification(
+            NotificationType.ENDORSEMENT_VERIFIED,
+            endorsement.user_id,
+            context,
+            endorsement.endorsement_id,  # Assuming endorsement has an endorsement_id attribute.
+        )
+
+        # If there is a contact associated with the endorsement, send a notification to the contact owner.
+        if endorsement.contact and endorsement.contact.user_id:
+            await self._notification_service.send_notification(
+                NotificationType.CONTACT_ENDORSEMENT_VERIFIED,
+                endorsement.contact.user_id,
+                context,
+                endorsement.endorsement_id,
+            )

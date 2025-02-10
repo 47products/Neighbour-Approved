@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Index, Integer, String, ForeignKey, text
+from sqlalchemy import Float, Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 from sqlalchemy.ext.hybrid import hybrid_property
 
@@ -111,7 +111,7 @@ class Contact(TimestampMixin, ActiveMixin, Base):
         nullable=False,
     )
     average_rating: Mapped[Optional[float]] = mapped_column(
-        Integer,
+        Float,
         comment="Average rating out of 5",
     )
     verified_endorsements_count: Mapped[int] = mapped_column(
