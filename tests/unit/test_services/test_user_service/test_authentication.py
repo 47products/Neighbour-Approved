@@ -334,60 +334,229 @@ async def test_authenticate_user_successful():
     mock_db.commit.assert_called_once()
 
 
-# async def test_authenticate_user_first_login():
-#     """
-#     Test first-time user authentication.
-#     Verifies that authenticate_user correctly identifies first login.
-#     """
+@pytest.mark.asyncio
+async def test_authenticate_user_first_login():
+    """
+    Test first-time user authentication.
+
+    This test verifies that:
+    1. A user authenticates successfully with correct email and password.
+    2. The user is identified as logging in for the first time.
+    3. The last login timestamp is updated.
+    4. Failed login attempts are reset.
+
+    Uses mocked database and security service to isolate the test.
+    """
+    # Arrange
+    test_email = "firstlogin@example.com"
+    password = "newuserpassword"
+
+    # Create a mock user who has never logged in before
+    mock_user = User(
+        id=2,
+        email=test_email,
+        password="hashed_password",
+        first_name="Alice",
+        last_name="Smith",
+        is_active=True,
+        email_verified=True,
+        last_login=None,  # Indicates first login
+    )
+
+    # Initialize authentication-related attributes
+    mock_user.failed_login_attempts = 1
+    mock_user.failed_login_lockout = None
+
+    # Configure mock database and repository behavior
+    mock_db = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_user
+    mock_db.execute = AsyncMock(return_value=mock_result)
+
+    # Configure security service mock
+    mock_security = AsyncMock()
+    mock_security.verify_password.return_value = True
+
+    # Instantiate authentication service with mocked dependencies
+    auth_service = AuthenticationService(mock_db, mock_security)
+
+    # Act
+    authenticated_user, is_first_login = await auth_service.authenticate_user(
+        test_email, password
+    )
+
+    # Assert
+    assert authenticated_user is not None
+    assert authenticated_user.id == mock_user.id
+    assert authenticated_user.email == test_email
+    assert authenticated_user.is_active is True
+    assert authenticated_user.last_login is not None  # Should be updated
+    assert authenticated_user.failed_login_attempts == 0
+    assert authenticated_user.failed_login_lockout is None
+    assert is_first_login is True  # Confirming first login status
+
+    # Verify method calls
+    mock_security.verify_password.assert_called_once_with(mock_user.password, password)
+    mock_db.commit.assert_called_once()
 
 
-# async def test_authenticate_user_locked():
-#     """
-#     Test authentication attempt on locked account with tracking.
-#     Verifies that authenticate_user raises ValidationError for locked accounts.
-#     """
+@pytest.mark.asyncio
+async def test_authenticate_user_locked():
+    """
+    Test authentication attempt on locked account with tracking.
+
+    This test verifies that:
+    1. If a user account is locked due to failed login attempts, authentication fails.
+    2. The system raises a ValidationError indicating the lockout.
+    3. The lockout expiry time is included in the error details.
+
+    Uses mocked database and security service to isolate the test.
+    """
+    # Arrange
+    test_email = "locked@example.com"
+    password = "irrelevantpassword"
+
+    # Set a future lockout expiry time
+    lockout_until = datetime.now(UTC) + timedelta(minutes=15)
+
+    # Create a mock user with an active lockout
+    mock_user = User(
+        id=3,
+        email=test_email,
+        password="hashed_password",
+        first_name="Locked",
+        last_name="User",
+        is_active=True,
+        email_verified=True,
+        last_login=None,
+    )
+    mock_user.failed_login_attempts = 5
+    mock_user.failed_login_lockout = lockout_until  # Account is locked
+
+    # Configure mock database and repository behavior
+    mock_db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_user
+    mock_db.execute = AsyncMock(return_value=mock_result)
+
+    # Configure security service mock (not used but included for consistency)
+    mock_security = AsyncMock()
+
+    # Instantiate authentication service with mocked dependencies
+    auth_service = AuthenticationService(mock_db, mock_security)
+
+    # Act & Assert
+    with pytest.raises(ValidationError) as exc_info:
+        await auth_service.authenticate_user(test_email, password)
+
+    # Validate the raised exception
+    assert "Account temporarily locked" in str(exc_info.value)
+    assert exc_info.value.details["lockout_until"] == lockout_until
+
+    # Ensure that password verification was not attempted
+    mock_security.verify_password.assert_not_called()
+
+    # Ensure that no database commit was attempted
+    mock_db.commit.assert_not_called()
 
 
-# async def test_track_successful_login():
-#     """
-#     Test successful login tracking updates.
-#     Verifies that login timestamp and attempt tracking are updated correctly.
-#     """
+@pytest.mark.asyncio
+async def test_track_successful_login():
+    """
+    Test successful login tracking updates.
+
+    This test verifies that:
+    1. The user's last login timestamp is updated upon successful authentication.
+    2. Failed login attempts are reset to zero.
+    3. The failed login lockout is cleared.
+    4. The database commit is called to persist the changes.
+
+    Uses a mocked database to isolate the test.
+    """
+    # Arrange
+    test_email = "test@example.com"
+
+    # Create a mock user with previous failed attempts
+    mock_user = User(
+        id=4,
+        email=test_email,
+        password="hashed_password",
+        first_name="Track",
+        last_name="Login",
+        is_active=True,
+        email_verified=True,
+        last_login=None,  # Last login is None, meaning this could be the first tracked login
+    )
+
+    # Initialize authentication-related attributes
+    mock_user.failed_login_attempts = 3
+    mock_user.failed_login_lockout = None
+
+    # Configure mock database
+    mock_db = AsyncMock()
+    mock_db.commit = AsyncMock()
+
+    # Instantiate authentication service with mocked dependencies
+    auth_service = AuthenticationService(mock_db, AsyncMock())
+
+    # Act
+    await auth_service._track_successful_login(mock_user)
+
+    # Assert
+    assert mock_user.last_login is not None  # Last login should be updated
+    assert mock_user.failed_login_attempts == 0  # Failed attempts should be reset
+    assert mock_user.failed_login_lockout is None  # Lockout should be cleared
+
+    # Verify that commit was called to persist changes
+    mock_db.commit.assert_called_once()
 
 
-# async def test_handle_failed_login_first_attempt():
-#     """
-#     Test handling of first failed login attempt.
-#     Verifies that failed attempt is recorded without lockout.
-#     """
+@pytest.mark.asyncio
+async def test_handle_failed_login_first_attempt():
+    """
+    Test handling of first failed login attempt.
 
+    This test verifies that:
+    1. The user's failed login attempt count is incremented.
+    2. No lockout is applied on the first failure.
+    3. The database commit is called to persist the changes.
 
-# async def test_handle_failed_login_multiple_attempts():
-#     """
-#     Test handling of multiple failed login attempts.
-#     Verifies progressive lockout policy implementation.
-#     """
+    Uses a mocked database to isolate the test.
+    """
+    # Arrange
+    test_email = "test@example.com"
 
+    # Create a mock user with no prior failed attempts
+    mock_user = User(
+        id=5,
+        email=test_email,
+        password="hashed_password",
+        first_name="First",
+        last_name="Attempt",
+        is_active=True,
+        email_verified=True,
+        last_login=None,
+    )
 
-# async def test_handle_failed_login_extended_lockout():
-#     """
-#     Test handling of extended lockout after numerous failures.
-#     Verifies maximum lockout duration is applied correctly.
-#     """
+    # Initialize authentication-related attributes
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
 
+    # Configure mock database
+    mock_db = AsyncMock()
+    mock_db.commit = AsyncMock()
 
-# @pytest.mark.asyncio
-# async def test_authenticate_database_error(dummy_db: AsyncMock):
-#     """
-#     Test authentication handling of database errors.
+    # Instantiate authentication service with mocked dependencies
+    auth_service = AuthenticationService(mock_db, AsyncMock())
 
-#     This test verifies that the `authenticate` method properly handles and logs database
-#     errors that occur during user lookup. When the repository raises a SQLAlchemy
-#     error, the service should catch it, log the error, and raise an AuthenticationError.
+    # Act
+    await auth_service._handle_failed_login(mock_user)
 
-#     Args:
-#         dummy_db: A dummy asynchronous database session fixture.
+    # Assert
+    assert mock_user.failed_login_attempts == 1  # Failed attempts should increase by 1
+    assert mock_user.failed_login_lockout is None  # No lockout should be applied
 
-#     Raises:
-#         AuthenticationError: Expected to be raised when database error occurs.
-#     """
+    # Verify that commit was called to persist changes
+    mock_db.commit.assert_called_once()
