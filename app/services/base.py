@@ -8,7 +8,7 @@ functionality through base classes.
 """
 
 from abc import abstractmethod
-from typing import Any, Dict, Generic, List, Optional, Protocol, Type, TypeVar
+from typing import Any, Dict, List, Optional, Protocol, Type
 import structlog
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -16,12 +16,6 @@ from sqlalchemy.orm import Session
 from app.core.error_handling import BaseAppException, BusinessLogicError
 from app.db.repositories.repository_interface import IRepository
 from app.db.repositories.repository_implementation import BaseRepository
-
-# Define type variables for models and schemas
-ModelType = TypeVar("ModelType")
-CreateSchemaType = TypeVar("CreateSchemaType")
-UpdateSchemaType = TypeVar("UpdateSchemaType")
-RepositoryType = TypeVar("RepositoryType", bound=BaseRepository)
 
 logger = structlog.get_logger(__name__)
 
@@ -69,7 +63,8 @@ class ValidationException(ServiceException):
         )
 
 
-class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+# Inline generic type parameters are declared directly after the class name.
+class IService[ModelType, CreateSchemaType, UpdateSchemaType](Protocol):
     """Base service interface defining standard operations.
 
     This interface establishes the contract that all service implementations
@@ -80,6 +75,7 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
     @abstractmethod
     def repository(self) -> IRepository:
         """Get the underlying repository instance."""
+        ...
 
     @abstractmethod
     async def create(self, data: CreateSchemaType) -> ModelType:
@@ -95,6 +91,7 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If business rules are violated
             ServiceException: If service operation fails
         """
+        ...
 
     @abstractmethod
     async def get(self, id: Any) -> Optional[ModelType]:
@@ -109,6 +106,7 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
         Raises:
             ServiceException: If service operation fails
         """
+        ...
 
     @abstractmethod
     async def get_multi(
@@ -131,6 +129,7 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
         Raises:
             ServiceException: If service operation fails
         """
+        ...
 
     @abstractmethod
     async def update(self, *, id: Any, data: UpdateSchemaType) -> Optional[ModelType]:
@@ -147,6 +146,7 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If business rules are violated
             ServiceException: If service operation fails
         """
+        ...
 
     @abstractmethod
     async def delete(self, id: Any) -> bool:
@@ -162,11 +162,10 @@ class IService(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType])
             ValidationException: If deletion is not allowed
             ServiceException: If service operation fails
         """
+        ...
 
 
-class BaseService(
-    Generic[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
-):
+class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]:
     """Base service implementation with common functionality.
 
     This class provides a foundation for all service implementations,
@@ -470,7 +469,7 @@ class BaseService(
         """
         # Override in derived classes to implement validation
 
-    async def pre_update(self, id: Any, data: UpdateSchemaType) -> UpdateSchemaType:
+    async def pre_update(self, _, data: UpdateSchemaType) -> UpdateSchemaType:
         """Process data before update.
 
         Args:

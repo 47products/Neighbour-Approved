@@ -9,16 +9,14 @@ The interface uses Python's typing system to enforce type safety and provide
 better IDE support and code documentation.
 """
 
-from typing import Protocol, TypeVar, Generic, Optional, List, Any, Dict
+from typing import Protocol, Optional, List, Any, Dict
 from sqlalchemy.orm import Session
 
-# Define generic type variables
-ModelType = TypeVar("ModelType")
-CreateSchemaType = TypeVar("CreateSchemaType")
-UpdateSchemaType = TypeVar("UpdateSchemaType")
+# Removed module-level type variable declarations.
+# Instead, we declare generic type parameters inline in the class definition.
 
 
-class IRepository(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class IRepository[ModelType, CreateSchemaType, UpdateSchemaType](Protocol):
     """
     Base repository interface defining standard database operations.
 
@@ -65,7 +63,7 @@ class IRepository(Protocol, Generic[ModelType, CreateSchemaType, UpdateSchemaTyp
         *,
         skip: int = 0,
         limit: int = 100,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
     ) -> List[ModelType]:
         """
         Retrieve multiple records with pagination and filtering.

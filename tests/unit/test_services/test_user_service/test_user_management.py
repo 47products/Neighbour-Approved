@@ -36,8 +36,6 @@ from app.db.models.user_model import User
 from app.services.service_exceptions import (
     DuplicateResourceError,
     AccessDeniedError,
-    ResourceNotFoundError,
-    ValidationError,
 )
 
 
@@ -47,7 +45,9 @@ from app.services.service_exceptions import (
 def add_model_copy(monkeypatch):
     from app.api.v1.schemas.user_schema import UserCreate
 
-    monkeypatch.setattr(UserCreate, "model_copy", lambda self: self.copy())
+    monkeypatch.setattr(
+        UserCreate, "model_copy", lambda self: self.__class__(**self.model_dump())
+    )
 
 
 @pytest.mark.asyncio
@@ -93,7 +93,7 @@ async def test_create_user_success(dummy_db):
 
     # Assert
     # Build the expected data: the copy with the password updated to the hashed value.
-    expected_data = data.copy()
+    expected_data = data.model_copy()
     expected_data.password = "hashedpassword"
     assert result == new_user
     mock_repository.get_by_email.assert_awaited_once_with(data.email)
