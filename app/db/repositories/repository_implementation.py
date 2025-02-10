@@ -12,7 +12,7 @@ The repository layer is responsible for:
 - Connection management
 """
 
-from typing import Generic, TypeVar, Type, Optional, List, Any, Dict
+from typing import Type, Optional, List, Any, Dict
 from sqlalchemy import select, update, delete, func
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from sqlalchemy.orm import Session
@@ -31,14 +31,10 @@ from app.core.error_handling import (
     DuplicateRecordError,
 )
 
-ModelType = TypeVar("ModelType")
-CreateSchemaType = TypeVar("CreateSchemaType")
-UpdateSchemaType = TypeVar("UpdateSchemaType")
-
 logger = structlog.get_logger()
 
 
-class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
+class BaseRepository[ModelType, CreateSchemaType, UpdateSchemaType]:
     """
     Base repository implementation with common database operations.
 

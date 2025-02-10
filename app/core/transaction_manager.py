@@ -9,7 +9,7 @@ capabilities.
 
 from contextlib import asynccontextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, TypeVar, cast
+from typing import Any, Callable, Generator, cast
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +19,6 @@ from app.db.database_session_management import get_db
 from app.core.error_handling import DatabaseError
 
 logger = structlog.get_logger(__name__)
-
-T = TypeVar("T")
 
 
 class TransactionManager:
@@ -90,16 +88,9 @@ class TransactionManager:
             raise
 
 
-def transactional(func: Callable[..., T]) -> Callable[..., T]:
+def transactional[T](func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator for managing database transactions in synchronous functions.
-
-    Usage:
-        @transactional
-        def create_user(db: Session, user_data: dict) -> User:
-            user = User(**user_data)
-            db.add(user)
-            return user
     """
 
     @wraps(func)
@@ -107,7 +98,6 @@ def transactional(func: Callable[..., T]) -> Callable[..., T]:
         db = next((arg for arg in args if isinstance(arg, Session)), None)
         if db is None:
             db = kwargs.get("db")
-
         if db is None:
             db = next(get_db())
             kwargs["db"] = db
@@ -134,7 +124,7 @@ def transactional(func: Callable[..., T]) -> Callable[..., T]:
     return cast(Callable[..., T], wrapper)
 
 
-async def async_transactional(func: Callable[..., T]) -> Callable[..., T]:
+async def async_transactional[T](func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator for managing database transactions in asynchronous functions.
 

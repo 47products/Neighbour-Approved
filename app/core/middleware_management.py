@@ -45,7 +45,7 @@ class MiddlewareConfig(BaseModel):
 ConfigType = TypeVar("ConfigType", bound=MiddlewareConfig)
 
 
-class BaseMiddleware(BaseHTTPMiddleware, Generic[ConfigType]):
+class BaseMiddleware[ConfigType](BaseHTTPMiddleware):
     """
     Base class for all middleware components.
 

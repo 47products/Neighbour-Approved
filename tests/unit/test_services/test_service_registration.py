@@ -368,7 +368,7 @@ def test_register_core_services_exception(monkeypatch):
 
     # Define a fake register method that always raises an exception.
     def fake_register(*args, **kwargs):
-        raise Exception("Simulated registration failure")
+        raise RuntimeError("Simulated registration failure")
 
     # Monkey-patch the registry.register method with our fake method.
     monkeypatch.setattr(registry, "register", fake_register)
@@ -380,7 +380,7 @@ def test_register_core_services_exception(monkeypatch):
 
     monkeypatch.setattr(logger, "error", fake_logger_error)
     # Calling register_core_services should re-raise the simulated exception.
-    with pytest.raises(Exception) as excinfo:
+    with pytest.raises(RuntimeError) as excinfo:
         register_core_services()
     # Verify that the exception message matches the simulated failure.
     assert "Simulated registration failure" in str(excinfo.value)
