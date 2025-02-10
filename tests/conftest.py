@@ -4,11 +4,14 @@ Shared test fixtures for the Neighbour Approved application.
 This module provides reusable fixtures for unit and integration tests.
 Key fixtures include:
 - test_client: Test client for the FastAPI app.
-- dummy_db: Dummy database session fixture using AsyncMock to simulate asynchronous 
-  database operations.
+- dummy_db: Dummy asynchronous database session fixture using AsyncMock to simulate
+  asynchronous database operations.
+- sync_dummy_db: Dummy synchronous database session fixture (a MagicMock) for tests
+  that require a synchronous Session.
 - mock_user: Mock user object for testing user-related functionalities.
 - mock_repository: Mock repository for simulating database interactions.
 - base_user_service: Instance of BaseUserService with mocked dependencies.
+- dummy_community: A dummy community model for testing.
 
 Usage:
     In tests, simply import the fixture by its name.
@@ -22,6 +25,7 @@ Dependencies:
 
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import pytest
 from fastapi.testclient import TestClient
@@ -38,8 +42,6 @@ load_dotenv(".env.test")
 def test_client():
     """
     Create and return a test client for the FastAPI application.
-
-    This fixture instantiates a TestClient for the app and yields it for use in tests.
 
     Yields:
         TestClient: A test client for the FastAPI app.
@@ -65,15 +67,23 @@ def dummy_db():
 
     # Configure session methods:
     # Use MagicMock for begin_nested so that it returns the context immediately.
-    from unittest.mock import MagicMock
-
     db.begin_nested = MagicMock(return_value=context)
-
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     db.refresh = AsyncMock()
 
     return db
+
+
+@pytest.fixture
+def sync_dummy_db():
+    """
+    Create a dummy synchronous database session.
+
+    Returns:
+        MagicMock: A mocked synchronous Session.
+    """
+    return MagicMock(spec=Session)
 
 
 @pytest.fixture
@@ -95,15 +105,13 @@ def mock_repository(dummy_db):
     This fixture replaces actual repository calls with AsyncMock instances.
 
     Args:
-        dummy_db: The mocked database session.
+        dummy_db: The mocked asynchronous database session.
 
     Returns:
         MagicMock: A mocked UserRepository instance.
     """
     repository = MagicMock(spec=UserRepository)
-    repository.get_by_email = AsyncMock(
-        return_value=None
-    )  # Default: no duplicate emails
+    repository.get_by_email = AsyncMock(return_value=None)
     repository.get = AsyncMock()
     repository.update = AsyncMock()
     return repository
@@ -114,10 +122,8 @@ def base_user_service(dummy_db, mock_repository):
     """
     Create an instance of BaseUserService with mocked dependencies.
 
-    This fixture initializes BaseUserService with a mock database session and repository.
-
     Args:
-        dummy_db: The mocked database session.
+        dummy_db: The mocked asynchronous database session.
         mock_repository: The mocked UserRepository instance.
 
     Returns:
@@ -127,3 +133,21 @@ def base_user_service(dummy_db, mock_repository):
     service._repository = mock_repository
     mock_repository.db = dummy_db
     return service
+
+
+@pytest.fixture
+def dummy_community():
+    """
+    Create a dummy community instance for testing.
+
+    Returns:
+        DummyCommunity: A class that can be instantiated to simulate a community.
+    """
+
+    class DummyCommunity:
+        def __init__(self, active=True):
+            self.is_active = active
+            # Provide a dummy _sa_instance_state to satisfy SQLAlchemy instrumentation.
+            self._sa_instance_state = object()
+
+    return DummyCommunity
