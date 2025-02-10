@@ -8,8 +8,10 @@ login tracking, and security measures.
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
+from sqlalchemy.exc import SQLAlchemyError
 import pytest
 from unittest.mock import AsyncMock
+from app.core.error_handling import AuthenticationError
 from app.services.service_exceptions import ValidationError
 from app.db.models.user_model import User
 from app.services.user_service.authentication import AuthenticationService
@@ -560,3 +562,265 @@ async def test_handle_failed_login_first_attempt():
 
     # Verify that commit was called to persist changes
     mock_db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_authenticate_sqlalchemy_error(dummy_db):
+    """
+    Test that a SQLAlchemyError during commit in authenticate
+    is caught and re-raised as an AuthenticationError.
+    """
+    test_email = "test@example.com"
+    password = "correct_password"
+    mock_user = User(id=1, email=test_email, password="hashed_password", is_active=True)
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
+
+    # Prepare a repository that returns the valid user.
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=mock_user)
+    # *** IMPORTANT: assign dummy_db to the repository's db attribute ***
+    mock_repository.db = dummy_db
+
+    # Security service returns True so that commit is reached.
+    mock_security = AsyncMock()
+    mock_security.verify_password.return_value = True
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    # Force the commit to raise SQLAlchemyError.
+    dummy_db.commit = AsyncMock(side_effect=SQLAlchemyError("DB error"))
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await auth_service.authenticate(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_generic_exception(dummy_db):
+    """
+    Test that a generic exception (e.g. from verify_password)
+    in authenticate is caught and re-raised as an AuthenticationError.
+    """
+    test_email = "test@example.com"
+    password = "any_password"
+    mock_user = User(id=2, email=test_email, password="hashed_password", is_active=True)
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
+
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=mock_user)
+
+    mock_security = AsyncMock()
+    mock_security.verify_password.side_effect = Exception("Unexpected error")
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    with pytest.raises(AuthenticationError, match="Authentication failed"):
+        await auth_service.authenticate(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_no_user(dummy_db):
+    """
+    Test that authenticate_user raises an AuthenticationError
+    when no user is found by email.
+    """
+    test_email = "nonexistent@example.com"
+    password = "irrelevant"
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=None)
+    mock_security = AsyncMock()
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    with pytest.raises(AuthenticationError, match="Invalid email or password"):
+        await auth_service.authenticate_user(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_invalid_password(dummy_db):
+    """
+    Test that authenticate_user (the full workflow) raises an AuthenticationError
+    when password verification fails.
+    """
+    test_email = "test@example.com"
+    password = "wrong_password"
+    mock_user = User(
+        id=3,
+        email=test_email,
+        password="hashed_password",
+        is_active=True,
+        last_login=datetime.now(UTC),
+    )
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
+
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=mock_user)
+    # IMPORTANT: Set the repository's db attribute so that self.db.commit() is awaitable.
+    mock_repository.db = dummy_db
+
+    mock_security = AsyncMock()
+    # Return False to simulate an invalid password.
+    mock_security.verify_password.return_value = False
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    with pytest.raises(AuthenticationError, match="Invalid email or password"):
+        await auth_service.authenticate_user(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_no_track(dummy_db):
+    """
+    Test that authenticate_user does not call _track_successful_login
+    when track_login is set to False.
+    """
+    test_email = "test@example.com"
+    password = "correct_password"
+    mock_user = User(
+        id=4,
+        email=test_email,
+        password="hashed_password",
+        is_active=True,
+        # Simulate a non-first login by setting last_login.
+        last_login=datetime.now(UTC),
+    )
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
+
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=mock_user)
+    mock_security = AsyncMock()
+    mock_security.verify_password.return_value = True
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+    # Replace _track_successful_login with a mock to detect calls.
+    auth_service._track_successful_login = AsyncMock()
+
+    _, is_first_login = await auth_service.authenticate_user(
+        test_email, password, track_login=False
+    )
+    auth_service._track_successful_login.assert_not_called()
+    assert is_first_login is False
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_deactivated(dummy_db):
+    """
+    Test that authenticate_user raises an AuthenticationError with the message
+    "Account is deactivated" when the user is inactive.
+    """
+    test_email = "inactive@example.com"
+    password = "any_password"
+
+    # Create a mock user that is inactive.
+    mock_user = User(
+        id=1,
+        email=test_email,
+        password="hashed_password",
+        is_active=False,  # User is deactivated.
+        last_login=datetime.now(UTC),
+    )
+    mock_user.failed_login_attempts = 0
+    mock_user.failed_login_lockout = None
+
+    # Prepare a mock repository that returns the inactive user.
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(return_value=mock_user)
+    # Ensure the repository's db attribute is set to dummy_db.
+    mock_repository.db = dummy_db
+
+    # Prepare a dummy security service (its verify_password should not be called in this case).
+    mock_security = AsyncMock()
+
+    # Instantiate the authentication service with the dummy DB and security service.
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    # Expect an AuthenticationError with the proper message.
+    with pytest.raises(AuthenticationError, match="Account is deactivated"):
+        await auth_service.authenticate_user(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_user_get_by_email_exception(dummy_db):
+    """
+    Test that if repository.get_by_email raises an exception,
+    authenticate_user propagates that exception.
+    """
+    test_email = "test@example.com"
+    password = "any_password"
+    mock_repository = MagicMock()
+    mock_repository.get_by_email = AsyncMock(side_effect=Exception("DB failure"))
+    mock_security = AsyncMock()
+
+    auth_service = AuthenticationService(dummy_db, mock_security)
+    auth_service._repository = mock_repository
+
+    with pytest.raises(Exception, match="DB failure"):
+        await auth_service.authenticate_user(test_email, password)
+
+
+@pytest.mark.asyncio
+async def test_handle_failed_login_lockout_15(dummy_db):
+    """
+    Test that a failed login attempt which brings the user's failed count
+    to 4 applies a 15-minute lockout.
+    """
+    test_email = "test@example.com"
+    mock_user = User(
+        id=5,
+        email=test_email,
+        password="hashed_password",
+        is_active=True,
+    )
+    # Set failed_login_attempts to 3 so that after increment it becomes 4.
+    mock_user.failed_login_attempts = 3
+    mock_user.failed_login_lockout = None
+
+    dummy_db.commit = AsyncMock()
+    auth_service = AuthenticationService(dummy_db, AsyncMock())
+    await auth_service._handle_failed_login(mock_user)
+
+    assert mock_user.failed_login_attempts == 4
+    # Check that a lockout was applied (approximately 15 minutes from now).
+    assert mock_user.failed_login_lockout is not None
+    expected_lockout = datetime.now(UTC) + timedelta(minutes=15)
+    diff = mock_user.failed_login_lockout - expected_lockout
+    # Allow a tolerance of a few seconds.
+    assert abs(diff.total_seconds()) < 5
+
+
+@pytest.mark.asyncio
+async def test_handle_failed_login_lockout_1hr(dummy_db):
+    """
+    Test that a failed login attempt which brings the user's failed count
+    to 7 applies a 1-hour lockout.
+    """
+    test_email = "test@example.com"
+    mock_user = User(
+        id=6,
+        email=test_email,
+        password="hashed_password",
+        is_active=True,
+    )
+    # Set failed_login_attempts to 6 so that after increment it becomes 7.
+    mock_user.failed_login_attempts = 6
+    mock_user.failed_login_lockout = None
+
+    dummy_db.commit = AsyncMock()
+    auth_service = AuthenticationService(dummy_db, AsyncMock())
+    await auth_service._handle_failed_login(mock_user)
+
+    assert mock_user.failed_login_attempts == 7
+    # Check that a lockout was applied (approximately 1 hour from now).
+    assert mock_user.failed_login_lockout is not None
+    expected_lockout = datetime.now(UTC) + timedelta(hours=1)
+    diff = mock_user.failed_login_lockout - expected_lockout
+    assert abs(diff.total_seconds()) < 5

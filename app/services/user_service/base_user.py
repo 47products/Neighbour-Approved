@@ -111,7 +111,6 @@ class BaseUserService(
             user = await service.update_user(1, update_data)
         """
         transaction_manager = TransactionManager(self.db)
-
         try:
             async with transaction_manager.transaction():
                 # Verify user exists
@@ -124,7 +123,7 @@ class BaseUserService(
                 for key, value in data.model_dump(exclude_unset=True).items():
                     setattr(user, key, value)
 
-                await self.db.commit()
+                # No need to explicitly commit here (handled by transaction manager)
                 await self.db.refresh(user)
 
                 self._logger.info(
@@ -144,8 +143,9 @@ class BaseUserService(
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            await self.db.rollback()
-            raise BusinessRuleViolationError(f"Failed to update user {user_id}")
+            # Remove the extra rollback call here
+            # await self.db.rollback()
+            raise BusinessRuleViolationError(f"Failed to update user {user_id}") from e
 
     async def get_user_communities(self, user_id: int) -> List[Community]:
         """Get communities associated with user.

@@ -7,11 +7,12 @@ and asynchronous transaction handling with proper error management and rollback
 capabilities.
 """
 
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from functools import wraps
 from typing import Any, Callable, Generator, TypeVar, cast
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 from app.db.database_session_management import get_db
@@ -31,7 +32,7 @@ class TransactionManager:
     isolation levels.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """Initialize with database session."""
         self.db = db
         self._logger = logger.bind(transaction_id=id(self))
@@ -60,21 +61,29 @@ class TransactionManager:
             self._logger.error("transaction_rollback_failed", error=str(e))
             raise
 
-    @contextmanager
-    def transaction(self) -> Generator[Session, None, None]:
+    @asynccontextmanager
+    async def transaction(self):
         """
-        Context manager for handling transactions.
+        Async context manager for handling transactions.
 
         Usage:
-            with TransactionManager(db).transaction() as session:
+            async with TransactionManager(db).transaction() as session:
                 session.add(some_object)
         """
+
+        async def _do_rollback():
+            try:
+                await self.db.rollback()
+            except Exception as e:
+                self._logger.error("rollback_failed", error=str(e))
+                raise
+
         try:
-            self.begin()
-            yield self.db
-            self.commit()
+            async with self.db.begin_nested():
+                yield self.db
+                await self.db.commit()
         except Exception as e:
-            self.rollback()
+            await _do_rollback()
             self._logger.error(
                 "transaction_failed", error=str(e), error_type=type(e).__name__
             )
@@ -210,7 +219,7 @@ class NestedTransactionManager:
                 self._logger.error("nested_transaction_rollback_failed", error=str(e))
                 raise
 
-    @contextmanager
+    @asynccontextmanager
     def nested_transaction(self) -> Generator[Session, None, None]:
         """
         Context manager for handling nested transactions.
