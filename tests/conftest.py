@@ -31,6 +31,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.db.models.category_model import Category
 from app.db.models.contact_model import Contact
+from app.db.models.service_model import Service
 from app.db.repositories.community_repository import CommunityRepository
 from app.main import app
 from app.services.community_service.community_service_base import CommunityService
@@ -39,6 +40,10 @@ from app.services.community_service.community_service_membership import (
 )
 from app.services.contact_service.contact_service_base import ContactService
 from app.services.contact_service.contact_service_category import ContactServiceCategory
+from app.services.contact_service.contact_service_endorsement import (
+    ContactServiceEndorsement,
+)
+from app.services.contact_service.contact_service_service import ContactServiceService
 from app.services.user_service.user_service_base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
@@ -60,7 +65,7 @@ def test_client():
 
 
 @pytest.fixture
-def dummy_db(mock_user, mock_contact, mock_category):
+def dummy_db(mock_user, mock_contact, mock_category, mock_service):
     """
     Create a dummy asynchronous database session using AsyncMock.
 
@@ -78,9 +83,15 @@ def dummy_db(mock_user, mock_contact, mock_category):
             return mock_contact
         if model == Category and obj_id == mock_category.id:
             return mock_category
+        if model == Service and obj_id == mock_service.id:
+            return mock_service
         return None  # Simulate entity not found
 
     db.get = AsyncMock(side_effect=get_mock)  # Mock db.get() properly
+
+    # Mock .query() to support .filter_by().first()
+    db.query = MagicMock()
+    db.query.return_value.filter_by.return_value.first = MagicMock()
 
     # Configure session methods:
     db.commit = AsyncMock()
@@ -215,6 +226,17 @@ def community_service_membership(dummy_db, mock_community_repository):
 
 
 @pytest.fixture
+def mock_db():
+    """
+    Provide a mocked database session.
+
+    Returns:
+        MagicMock: A mock of the database session.
+    """
+    return MagicMock()
+
+
+@pytest.fixture
 def mock_contact():
     """Create a dummy contact instance for testing."""
     return Contact(id=1, contact_name="Test Contact", is_active=True, categories=[])
@@ -266,3 +288,59 @@ def contact_service_category(dummy_db, mock_contact_repository):
 def mock_category():
     """Create a dummy category instance for testing."""
     return Category(id=5, name="Plumbing")
+
+
+@pytest.fixture
+def contact_service_endorsement(mock_db):
+    """
+    Create an instance of ContactServiceEndorsement with a mocked database session.
+
+    Args:
+        mock_db (MagicMock): Mocked database session.
+
+    Returns:
+        ContactServiceEndorsement: Instance of the endorsement service.
+    """
+    return ContactServiceEndorsement(db=mock_db)
+
+
+@pytest.fixture
+def mock_service():
+    """Create a dummy service instance for testing."""
+    return Service(id=10, name="Test Service")
+
+
+@pytest.fixture
+def mock_service_repository(dummy_db):
+    """
+    Create a mock ServiceRepository for simulating database operations.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+
+    Returns:
+        MagicMock: A mocked ServiceRepository instance.
+    """
+    repository = MagicMock()
+    repository.get = AsyncMock()
+    repository.delete = AsyncMock(return_value=True)
+    return repository
+
+
+@pytest.fixture
+def contact_service_service(dummy_db, mock_contact_repository, mock_service_repository):
+    """
+    Create an instance of ContactServiceService with mocked dependencies.
+
+    Args:
+        dummy_db (AsyncMock): The mocked asynchronous database session.
+        mock_contact_repository (MagicMock): The mocked ContactRepository instance.
+        mock_service_repository (MagicMock): The mocked ServiceRepository instance.
+
+    Returns:
+        ContactServiceService: An instance with mocked dependencies.
+    """
+    service = ContactServiceService(db=dummy_db)
+    service.contact_repository = mock_contact_repository
+    service.service_repository = mock_service_repository
+    return service
