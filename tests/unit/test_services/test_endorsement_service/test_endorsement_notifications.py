@@ -2,7 +2,9 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.endorsement_service.endorsement_notifications import NotificationMixin
+from app.services.endorsement_service.endorsement_service_notifications import (
+    NotificationMixin,
+)
 from app.services.notification_service import NotificationType
 
 # Ensure that NotificationType includes the CONTACT_ENDORSEMENT_VERIFIED attribute.

@@ -15,7 +15,7 @@ Dependencies:
 from unittest.mock import AsyncMock
 import pytest
 from app.db.models.community_model import Community, PrivacyLevel
-from app.services.community_service.constants import MAX_MEMBERS_FREE
+from app.services.community_service.community_service_constants import MAX_MEMBERS_FREE
 from app.services.service_exceptions import (
     ResourceNotFoundError,
     ValidationError,

@@ -29,11 +29,16 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import pytest
 from fastapi.testclient import TestClient
+from app.db.models.category_model import Category
+from app.db.models.contact_model import Contact
 from app.db.repositories.community_repository import CommunityRepository
 from app.main import app
-from app.services.community_service.base import CommunityService
-from app.services.community_service.membership import CommunityMembershipService
-from app.services.user_service.base_user import BaseUserService
+from app.services.community_service.community_service_base import CommunityService
+from app.services.community_service.community_service_membership import (
+    CommunityMembershipService,
+)
+from app.services.contact_service.contact_service_base import ContactService
+from app.services.user_service.user_service_base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
 
@@ -54,26 +59,28 @@ def test_client():
 
 
 @pytest.fixture
-def dummy_db(mock_user):
+def dummy_db(mock_user, mock_contact, mock_category):
     """
     Create a dummy asynchronous database session using AsyncMock.
 
-    Ensures db.get(User, user_id) returns the `mock_user` instance.
+    Ensures db.get(User, user_id), db.get(Contact, contact_id), and db.get(Category, category_id) return the correct instances.
 
     Returns:
         AsyncMock: A mocked AsyncSession with async methods.
     """
     db = AsyncMock(spec=AsyncSession)
 
-    # Simulate fetching a user from the database correctly
-    async def get_mock(model, user_id):
-        if model == User and user_id == mock_user.id:
+    # Simulate fetching models from the database
+    async def get_mock(model, obj_id):
+        if model == User and obj_id == mock_user.id:
             return mock_user
+        if model == Contact and obj_id == mock_contact.id:
+            return mock_contact
+        if model == Category and obj_id == mock_category.id:
+            return mock_category
         return None  # Simulate entity not found
 
-    db.get = AsyncMock(
-        side_effect=get_mock
-    )  # Ensure db.get() returns a real User instance
+    db.get = AsyncMock(side_effect=get_mock)  # Mock db.get() properly
 
     # Configure session methods:
     db.commit = AsyncMock()
@@ -205,3 +212,54 @@ def community_service_membership(dummy_db, mock_community_repository):
     service = CommunityMembershipService(db=dummy_db)
     service.repository = mock_community_repository
     return service
+
+
+@pytest.fixture
+def mock_contact():
+    """
+    Create a dummy contact instance for testing.
+
+    Returns:
+        Contact: A mocked contact instance.
+    """
+    return Contact(id=1, contact_name="Test Contact", is_active=True)
+
+
+@pytest.fixture
+def mock_contact_repository(dummy_db):
+    """
+    Create a mock ContactRepository for simulating database operations.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+
+    Returns:
+        MagicMock: A mocked ContactRepository instance.
+    """
+    repository = MagicMock()
+    repository.get = AsyncMock()
+    repository.delete = AsyncMock(return_value=True)
+    return repository
+
+
+@pytest.fixture
+def contact_service(dummy_db, mock_contact_repository):
+    """
+    Create an instance of ContactService with mocked dependencies.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+        mock_contact_repository: The mocked ContactRepository instance.
+
+    Returns:
+        ContactService: An instance with mocked dependencies.
+    """
+    service = ContactService(db=dummy_db)
+    service._repository = mock_contact_repository
+    return service
+
+
+@pytest.fixture
+def mock_category():
+    """Create a dummy category instance for testing."""
+    return Category(id=5, name="Plumbing")

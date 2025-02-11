@@ -18,14 +18,16 @@ Dependencies:
 
 import pytest
 from unittest.mock import AsyncMock
-from app.services.community_service.relationships import CommunityRelationshipService
+from app.services.community_service.community_service_relationships import (
+    CommunityRelationshipService,
+)
 from app.services.service_exceptions import (
     ResourceNotFoundError,
     ValidationError,
     QuotaExceededError,
 )
 from app.db.models.community_model import Community
-from app.services.community_service.constants import MAX_RELATIONSHIPS
+from app.services.community_service.community_service_constants import MAX_RELATIONSHIPS
 
 
 @pytest.mark.asyncio
