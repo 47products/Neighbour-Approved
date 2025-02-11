@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.transaction_manager import TransactionManager
-from app.services.base import BaseService
+from app.services.base_service import BaseService
 from app.services.service_interfaces import (
     IAuthenticationService,
     IEmailVerificationService,

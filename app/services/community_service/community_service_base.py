@@ -21,7 +21,7 @@ Typical usage example:
 
 from typing import Optional
 from sqlalchemy.orm import Session
-from app.services.base import BaseService
+from app.services.base_service import BaseService
 from app.services.service_exceptions import ResourceNotFoundError, ValidationError
 from app.services.service_interfaces import ICommunityService
 from app.db.models.community_model import Community

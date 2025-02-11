@@ -18,7 +18,7 @@ Typical usage example:
 
 from typing import Any
 from sqlalchemy.orm import Session
-from app.services.base import BaseService
+from app.services.base_service import BaseService
 from app.db.models.contact_model import Contact
 from app.db.repositories.contact_repository import ContactRepository
 from app.api.v1.schemas.contact_schema import ContactCreate, ContactUpdate

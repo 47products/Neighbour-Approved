@@ -13,7 +13,7 @@ import structlog
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.services.base import BaseService
+from app.services.base_service import BaseService
 from app.services.service_exceptions import DependencyError
 from app.db.database_session_management import get_db
 from app.services.user_service.user_service_authentication import AuthenticationService
@@ -22,7 +22,7 @@ from app.services.user_service.user_service_email_verification import (
 )
 from app.services.user_service.user_service_role import RoleService
 from app.services.user_service.user_service_security import SecurityService
-from app.services.user_service.user_management import UserManagementService
+from app.services.user_service.user_service_user_management import UserManagementService
 
 logger = structlog.get_logger(__name__)
 

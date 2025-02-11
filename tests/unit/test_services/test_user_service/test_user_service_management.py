@@ -30,7 +30,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.services.user_service.user_management import UserManagementService
+from app.services.user_service.user_service_user_management import UserManagementService
 from app.api.v1.schemas.user_schema import UserCreate
 from app.db.models.user_model import User
 from app.services.service_exceptions import (
