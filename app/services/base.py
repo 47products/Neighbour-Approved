@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.error_handling import BaseAppException, BusinessLogicError
 from app.db.repositories.repository_interface import IRepository
-from app.db.repositories.repository_implementation import BaseRepository
+from app.services.service_exceptions import ResourceNotFoundError
 
 logger = structlog.get_logger(__name__)
 
@@ -314,13 +314,12 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
         try:
             record = await self._repository.get(id)
             if record:
-                # Check access permissions
                 await self.check_access(record)
             return record
-
+        except ResourceNotFoundError:  # Allow it to propagate
+            raise
         except HTTPException:
             raise
-
         except Exception as e:
             self._logger.error(
                 "retrieval_failed",
@@ -528,6 +527,8 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
             )
             raise ValidationException(str(e)) from e
 
+        except ResourceNotFoundError:
+            raise  # Allow the test to catch it
         except Exception as e:
             self._logger.error(
                 "deletion_failed",

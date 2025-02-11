@@ -8,6 +8,8 @@ restricted community names.
 Attributes:
     - MAX_MEMBERS_FREE (int): Maximum members allowed for free communities.
     - MAX_MEMBERS_PREMIUM (int): Maximum members allowed for premium communities.
+    - MAX_COMMUNITIES_FREE (int): Maximum number of communities a free-tier user can create.
+    - MAX_COMMUNITIES_PREMIUM (int): Maximum number of communities a premium user can create.
     - MAX_RELATIONSHIPS (int): Maximum number of related communities per community.
     - MAX_PENDING_INVITES (int): Maximum number of pending invitations per community.
     - RESTRICTED_NAMES (set): Set of restricted community names that cannot be used.
@@ -22,12 +24,25 @@ from app.db.models.community_model import PrivacyLevel
 MAX_MEMBERS_FREE = 50
 MAX_MEMBERS_PREMIUM = 500
 
+MAX_COMMUNITIES_FREE = 5  # Adjust this limit based on your business rules
+MAX_COMMUNITIES_PREMIUM = 20  # Adjust this limit for premium users
+
 # Relationship and invitation limits
 MAX_RELATIONSHIPS = 10
 MAX_PENDING_INVITES = 100
 
 # Restricted community names to prevent misuse
-RESTRICTED_NAMES = {"admin", "system", "support", "test"}
+RESTRICTED_NAMES = {
+    "admin",
+    "moderator",
+    "official",
+    "banned",
+    "restricted",
+    "community_admin",
+    "system",
+    "support",
+    "test",
+}
 
 
 class MemberRole(str, Enum):

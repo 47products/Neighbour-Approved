@@ -29,7 +29,10 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import pytest
 from fastapi.testclient import TestClient
+from app.db.repositories.community_repository import CommunityRepository
 from app.main import app
+from app.services.community_service.base import CommunityService
+from app.services.community_service.membership import CommunityMembershipService
 from app.services.user_service.base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
@@ -51,23 +54,28 @@ def test_client():
 
 
 @pytest.fixture
-def dummy_db():
+def dummy_db(mock_user):
     """
     Create a dummy asynchronous database session using AsyncMock.
+
+    Ensures db.get(User, user_id) returns the `mock_user` instance.
 
     Returns:
         AsyncMock: A mocked AsyncSession with async methods.
     """
     db = AsyncMock(spec=AsyncSession)
 
-    # Configure the async context manager
-    context = AsyncMock()
-    context.__aenter__ = AsyncMock(return_value=db)
-    context.__aexit__ = AsyncMock(return_value=None)
+    # Simulate fetching a user from the database correctly
+    async def get_mock(model, user_id):
+        if model == User and user_id == mock_user.id:
+            return mock_user
+        return None  # Simulate entity not found
+
+    db.get = AsyncMock(
+        side_effect=get_mock
+    )  # Ensure db.get() returns a real User instance
 
     # Configure session methods:
-    # Use MagicMock for begin_nested so that it returns the context immediately.
-    db.begin_nested = MagicMock(return_value=context)
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
     db.refresh = AsyncMock()
@@ -151,3 +159,49 @@ def dummy_community():
             self._sa_instance_state = object()
 
     return DummyCommunity
+
+
+@pytest.fixture
+def mock_community_repository(dummy_db):
+    """
+    Create a mock CommunityRepository for simulating database operations.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+
+    Returns:
+        MagicMock: A mocked CommunityRepository instance.
+    """
+    return MagicMock(spec=CommunityRepository)
+
+
+@pytest.fixture
+def community_service(dummy_db, mock_community_repository):
+    """
+    Create an instance of CommunityService with mocked dependencies.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+        mock_community_repository: The mocked CommunityRepository instance.
+
+    Returns:
+        CommunityService: An instance with mocked dependencies.
+    """
+    return CommunityService(db=dummy_db, repository=mock_community_repository)
+
+
+@pytest.fixture
+def community_service_membership(dummy_db, mock_community_repository):
+    """
+    Create an instance of CommunityMembershipService with mocked dependencies.
+
+    Args:
+        dummy_db: The mocked asynchronous database session.
+        mock_community_repository: The mocked CommunityRepository instance.
+
+    Returns:
+        CommunityMembershipService: An instance with mocked dependencies.
+    """
+    service = CommunityMembershipService(db=dummy_db)
+    service.repository = mock_community_repository
+    return service

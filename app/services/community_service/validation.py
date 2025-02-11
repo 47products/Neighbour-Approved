@@ -25,6 +25,8 @@ from app.services.community_service.constants import (
     RESTRICTED_NAMES,
     MAX_MEMBERS_FREE,
     MAX_MEMBERS_PREMIUM,
+    MAX_COMMUNITIES_FREE,
+    MAX_COMMUNITIES_PREMIUM,
 )
 from app.services.service_exceptions import (
     ValidationError,
@@ -72,7 +74,9 @@ class CommunityValidationService:
             raise ValidationError(f"Owner {data['owner_id']} not found or inactive.")
 
         owned_communities = await self.repository.get_user_communities(data["owner_id"])
-        max_limit = MAX_MEMBERS_PREMIUM if owner.is_premium else MAX_MEMBERS_FREE
+        max_limit = (
+            MAX_COMMUNITIES_PREMIUM if owner.is_premium else MAX_COMMUNITIES_FREE
+        )
 
         if len(owned_communities) >= max_limit:
             raise BusinessRuleViolationError(
