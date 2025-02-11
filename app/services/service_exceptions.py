@@ -402,3 +402,72 @@ class UserManagementError(ServiceError):
             status.HTTP_400_BAD_REQUEST,
             details,
         )
+
+
+class ServiceException(BaseAppException):
+    """
+    Base exception for service-related errors.
+
+    This exception serves as the foundation for more specific service-layer
+    exceptions and includes HTTP-compatible error details.
+
+    Attributes:
+        message (str): Error message for the client.
+        error_code (str): Identifies the type of service error.
+        status_code (int): HTTP status code for API responses.
+        details (Optional[Dict[str, Any]]): Additional error metadata.
+    """
+
+    def __init__(
+        self,
+        message: str = "Service operation failed",
+        error_code: str = "SERVICE_ERROR",
+        status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize the service exception.
+
+        Args:
+            message (str): Error message for the client.
+            error_code (str): A unique identifier for the error type.
+            status_code (int): HTTP status code representing the error.
+            details (Optional[Dict[str, Any]]): Additional metadata for debugging.
+        """
+        super().__init__(message, error_code, status_code, details)
+
+
+class ValidationException(ServiceException):
+    """
+    Exception raised for business rule validation failures.
+
+    This exception should be raised whenever input data or state transitions
+    violate business constraints.
+
+    Attributes:
+        message (str): Description of the validation error.
+        error_code (str): Identifies this as a validation failure.
+        status_code (int): HTTP 422 (Unprocessable Entity).
+        details (Optional[Dict[str, Any]]): Additional validation metadata.
+    """
+
+    def __init__(
+        self,
+        message: str = "Validation error",
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        """Initialize the validation exception.
+
+        Args:
+            message (str): Explanation of the validation failure.
+            details (Optional[Dict[str, Any]]): Additional validation metadata.
+        """
+        super().__init__(
+            message=message,
+            error_code="VALIDATION_ERROR",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details=details,
+        )
+
+    def __str__(self):
+        # Assuming that the first argument is the message.
+        return self.args[0] if self.args else ""

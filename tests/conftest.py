@@ -437,3 +437,47 @@ def mock_unverifiable_contact():
     contact.endorsements_count = 1  # Not enough endorsements
     contact.communities = []  # No linked communities
     return contact
+
+
+@pytest.fixture
+def mock_model():
+    """
+    Create a mock SQLAlchemy model class with a valid __name__ attribute.
+
+    Returns:
+        MagicMock: A mocked SQLAlchemy model class.
+    """
+    mock = MagicMock(spec=User)
+    mock.__name__ = "User"  # Manually set the name attribute to avoid AttributeError
+    return mock
+
+
+@pytest.fixture
+def mock_repository(dummy_db):
+    """
+    Create a mock repository instance.
+
+    This fixture provides a repository mock that simulates database operations.
+
+    Args:
+        dummy_db (AsyncMock): The mocked database session.
+
+    Returns:
+        MagicMock: A mocked repository instance.
+    """
+    repo = MagicMock()
+    repo.db = dummy_db
+    repo.create = AsyncMock()
+    repo.get = AsyncMock()
+    repo.get_multi = AsyncMock()
+    repo.update = AsyncMock()
+    repo.delete = AsyncMock(return_value=True)
+    return repo
+
+
+@pytest.fixture
+def dummy_model():
+    class DummyModel:
+        __name__ = "DummyModel"
+
+    return DummyModel
