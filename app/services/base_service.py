@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.error_handling import BaseAppException, BusinessLogicError
 from app.db.repositories.repository_interface import IRepository
-from app.services.service_exceptions import ResourceNotFoundError
+from app.services.service_exceptions import ResourceNotFoundError, ValidationException
 
 logger = structlog.get_logger(__name__)
 
@@ -210,23 +210,12 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
         return self._repository.db
 
     async def create(self, data: CreateSchemaType) -> ModelType:
-        """Create a new record with validation.
-
-        Args:
-            data: Creation data
-
-        Returns:
-            Created model instance
-
-        Raises:
-            ValidationException: If validation fails
-            ServiceException: If creation fails
-        """
+        """Create a new record with validation."""
         try:
             # Perform business rule validation
             await self.validate_create(data)
 
-            # Perform any pre-create processing
+            # Pre-create processing
             processed_data = await self.pre_create(data)
 
             # Create the record
@@ -241,7 +230,7 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
             )
             record = await self._repository.create(processed_data)
 
-            # Perform any post-create processing
+            # Post-create processing
             await self.post_create(record)
 
             self._logger.info(
@@ -409,31 +398,13 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
         return True
 
     async def update(self, *, id: Any, data: UpdateSchemaType) -> Optional[ModelType]:
-        """Update a record.
-
-        Args:
-            id: Record identifier
-            data: Update data
-
-        Returns:
-            Updated model instance
-
-        Raises:
-            ValidationException: If validation fails
-            ServiceException: If update fails
-        """
+        """Update a record with validation."""
         try:
-            # Validate update data
             await self.validate_update(id, data)
-
-            # Process update data
             processed_data = await self.pre_update(id, data)
-
-            # Perform update
             record = await self._repository.update(id=id, schema=processed_data)
 
             if record:
-                # Post-update processing
                 await self.post_update(record)
 
             return record
@@ -445,16 +416,9 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
                 id=id,
                 error=str(e),
             )
-            raise ValidationException(str(e)) from e
-
-        except Exception as e:
-            self._logger.error(
-                "update_failed",
-                model=self._model.__name__,
-                id=id,
-                error=str(e),
-            )
-            raise ServiceException(f"Failed to update {self._model.__name__}") from e
+            raise ValidationException(
+                str(e)
+            ) from e  # ✅ Convert BusinessLogicError to ValidationException
 
     async def validate_update(self, id: Any, data: UpdateSchemaType) -> None:
         """Validate update data against business rules.
@@ -490,30 +454,13 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
         # Override in derived classes to implement post-update processing
 
     async def delete(self, id: Any) -> bool:
-        """Delete a record.
-
-        Args:
-            id: Record identifier
-
-        Returns:
-            True if record was deleted
-
-        Raises:
-            ValidationException: If deletion is not allowed
-            ServiceException: If deletion fails
-        """
+        """Delete a record with validation."""
         try:
-            # Check if deletion is allowed
             await self.validate_delete(id)
-
-            # Perform any pre-delete processing
             await self.pre_delete(id)
-
-            # Delete the record
             result = await self._repository.delete(id)
 
             if result:
-                # Perform any post-delete processing
                 await self.post_delete(id)
 
             return result
@@ -525,7 +472,9 @@ class BaseService[ModelType, CreateSchemaType, UpdateSchemaType, RepositoryType]
                 id=id,
                 error=str(e),
             )
-            raise ValidationException(str(e)) from e
+            raise ValidationException(
+                str(e)
+            ) from e  # ✅ Convert BusinessLogicError to ValidationException
 
         except ResourceNotFoundError:
             raise  # Allow the test to catch it
