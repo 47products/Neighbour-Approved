@@ -18,7 +18,7 @@ Usage example:
 from typing import cast
 from sqlalchemy.orm import Session
 
-from app.services.base import BaseService
+from app.services.base_service import BaseService
 from app.services.notification_service import NotificationService
 from app.services.service_interfaces import IEndorsementService
 from app.services.service_exceptions import (

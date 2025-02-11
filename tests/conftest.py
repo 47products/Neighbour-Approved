@@ -47,6 +47,9 @@ from app.services.contact_service.contact_service_service import ContactServiceS
 from app.services.contact_service.contact_service_validation import (
     ContactServiceValidation,
 )
+from app.services.contact_service.contact_service_verification import (
+    ContactServiceVerification,
+)
 from app.services.user_service.user_service_base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
@@ -72,7 +75,8 @@ def dummy_db(mock_user, mock_contact, mock_category, mock_service):
     """
     Create a dummy asynchronous database session using AsyncMock.
 
-    Ensures db.get(User, user_id), db.get(Contact, contact_id), and db.get(Category, category_id) return the correct instances.
+    Ensures db.get(User, user_id), db.get(Contact, contact_id), db.get(Category, category_id),
+    and db.get(Service, service_id) return the correct instances.
 
     Returns:
         AsyncMock: A mocked AsyncSession with async methods.
@@ -96,10 +100,8 @@ def dummy_db(mock_user, mock_contact, mock_category, mock_service):
     db.query = MagicMock()
     db.query.return_value.filter_by.return_value.first = MagicMock()
 
-    # Configure session methods:
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
-    db.refresh = AsyncMock()
 
     return db
 
@@ -380,3 +382,58 @@ def contact_service_validation(dummy_db):
         ContactServiceValidation: An instance with mocked dependencies.
     """
     return ContactServiceValidation(db=dummy_db)
+
+
+@pytest.fixture
+def contact_service_verification(dummy_db):
+    """
+    Create an instance of ContactServiceVerification with a mocked database session.
+
+    Args:
+        dummy_db (AsyncMock): The mocked asynchronous database session.
+
+    Returns:
+        ContactServiceVerification: An instance with mocked dependencies.
+    """
+    return ContactServiceVerification(db=dummy_db)
+
+
+@pytest.fixture
+def mock_verifiable_contact():
+    """
+    Create a mock contact that meets verification criteria.
+
+    Returns:
+        MagicMock: A mock Contact instance with verification attributes.
+    """
+    contact = MagicMock(spec=Contact)
+    contact.id = 1
+    contact.is_active = True
+    contact.email = "verified@example.com"
+    contact.contact_number = "123456789"
+    contact.primary_contact_contact_number = "987654321"
+    contact.endorsements_count = 3
+    contact.communities = [MagicMock()]  # Simulating active community links
+    contact.is_verified = False
+    contact.verification_date = None
+    contact.verification_notes = None
+    return contact
+
+
+@pytest.fixture
+def mock_unverifiable_contact():
+    """
+    Create a mock contact that does not meet verification criteria.
+
+    Returns:
+        MagicMock: A mock Contact instance missing required attributes.
+    """
+    contact = MagicMock(spec=Contact)
+    contact.id = 2
+    contact.is_active = False  # Inactive contact should not be verified
+    contact.email = "unverified@example.com"
+    contact.contact_number = None  # Missing phone number
+    contact.primary_contact_contact_number = None
+    contact.endorsements_count = 1  # Not enough endorsements
+    contact.communities = []  # No linked communities
+    return contact

@@ -69,10 +69,10 @@ class ContactServiceVerification:
             contact.verification_notes = (
                 f"Verified by user {verified_by} on {datetime.now(UTC)}"
             )
-            self.db.commit()
+            await self.db.commit()
             return True
         except Exception as e:
-            self.db.rollback()
+            await self.db.rollback()
             raise StateError(f"Failed to verify contact: {str(e)}")
 
     def _meets_verification_criteria(self, contact: Contact) -> bool:
