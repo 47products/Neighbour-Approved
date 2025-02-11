@@ -44,6 +44,9 @@ from app.services.contact_service.contact_service_endorsement import (
     ContactServiceEndorsement,
 )
 from app.services.contact_service.contact_service_service import ContactServiceService
+from app.services.contact_service.contact_service_validation import (
+    ContactServiceValidation,
+)
 from app.services.user_service.user_service_base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
@@ -243,6 +246,25 @@ def mock_contact():
 
 
 @pytest.fixture
+def mock_contact_data():
+    """
+    Create a mock contact data object for validation tests.
+
+    Returns:
+        A class mimicking an actual contact data object with necessary attributes.
+    """
+
+    class MockContactData:
+        def __init__(self):
+            self.contact_name = "Valid Contact"
+            self.primary_contact_first_name = "John"
+            self.primary_contact_last_name = "Doe"
+            self.email = "test@example.com"
+
+    return MockContactData()
+
+
+@pytest.fixture
 def mock_contact_repository(dummy_db):
     """
     Create a mock ContactRepository for simulating database operations.
@@ -344,3 +366,17 @@ def contact_service_service(dummy_db, mock_contact_repository, mock_service_repo
     service.contact_repository = mock_contact_repository
     service.service_repository = mock_service_repository
     return service
+
+
+@pytest.fixture
+def contact_service_validation(dummy_db):
+    """
+    Create an instance of ContactServiceValidation with a mocked database session.
+
+    Args:
+        dummy_db (AsyncMock): The mocked asynchronous database session.
+
+    Returns:
+        ContactServiceValidation: An instance with mocked dependencies.
+    """
+    return ContactServiceValidation(db=dummy_db)
