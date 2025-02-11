@@ -73,7 +73,7 @@ class ContactServiceService:
             return False
 
         contact.services.append(service)
-        self.db.commit()
+        await self.db.commit()
         return True
 
     async def remove_service(self, contact_id: int, service_id: int) -> bool:
@@ -101,5 +101,5 @@ class ContactServiceService:
             return False
 
         contact.services.remove(service)
-        self.db.commit()
+        await self.db.commit()
         return True
