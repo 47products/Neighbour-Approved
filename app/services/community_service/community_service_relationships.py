@@ -19,7 +19,7 @@ Typical usage example:
 
 from sqlalchemy.orm import Session
 from app.db.repositories.community_repository import CommunityRepository
-from app.services.community_service.constants import MAX_RELATIONSHIPS
+from app.services.community_service.community_service_constants import MAX_RELATIONSHIPS
 from app.services.service_exceptions import (
     ResourceNotFoundError,
     ValidationError,

@@ -115,13 +115,11 @@ class Settings(BaseSettings):
         Returns:
             PostgresDsn: Validated database URL for SQLAlchemy
         """
-        return PostgresDsn.build(
-            scheme="postgresql",
-            username=self.POSTGRES_USER,
-            password=self.POSTGRES_PASSWORD.get_secret_value(),
-            host=self.POSTGRES_HOST,
-            port=self.POSTGRES_PORT,
-            path=self.POSTGRES_DB,
+        return PostgresDsn(
+            f"postgresql://{self.POSTGRES_USER}:"
+            f"{self.POSTGRES_PASSWORD.get_secret_value()}@"
+            f"{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/"
+            f"{self.POSTGRES_DB}"
         )
 
     @model_validator(mode="after")

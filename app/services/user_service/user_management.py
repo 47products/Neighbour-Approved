@@ -22,8 +22,8 @@ from app.services.service_exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
-from app.services.user_service.base_user import BaseUserService
-from app.services.user_service.security import SecurityService
+from app.services.user_service.user_service_base_user import BaseUserService
+from app.services.user_service.user_service_security import SecurityService
 
 
 class UserManagementService(BaseUserService):

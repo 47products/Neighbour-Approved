@@ -20,11 +20,13 @@ Dependencies:
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.services.community_service.validation import CommunityValidationService
+from app.services.community_service.community_service_validation import (
+    CommunityValidationService,
+)
 from app.db.models.community_model import Community, PrivacyLevel
 from app.db.models.user_model import User
 from app.services.service_exceptions import ValidationError, BusinessRuleViolationError
-from app.services.community_service.constants import (
+from app.services.community_service.community_service_constants import (
     RESTRICTED_NAMES,
     MAX_COMMUNITIES_FREE,
 )

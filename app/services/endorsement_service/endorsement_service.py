@@ -39,9 +39,9 @@ from app.api.v1.schemas.contact_endorsement_schema import (
 )
 
 # Import mixins from the helper modules
-from .endorsement_rating import RatingMixin
-from .endorsement_verification import VerificationMixin
-from .endorsement_notifications import NotificationMixin
+from .endorsement_service_rating import RatingMixin
+from .endorsement_service_verification import VerificationMixin
+from .endorsement_service_notifications import NotificationMixin
 
 
 class EndorsementService(

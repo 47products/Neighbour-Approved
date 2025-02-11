@@ -7,7 +7,7 @@ It ensures proper initialization and cleanup of services while maintaining
 dependency relationships between different service components.
 """
 
-from typing import Any, Dict, Optional, Type, TypeVar, cast
+from typing import Any, Dict, Optional, Type, cast
 from contextlib import contextmanager
 import structlog
 from fastapi import Depends
@@ -16,17 +16,15 @@ from sqlalchemy.orm import Session
 from app.services.base import BaseService
 from app.services.service_exceptions import DependencyError
 from app.db.database_session_management import get_db
-from app.services.user_service.authentication import AuthenticationService
-from app.services.user_service.email_verification import (
+from app.services.user_service.user_service_authentication import AuthenticationService
+from app.services.user_service.user_service_email_verification import (
     EmailVerificationService,
 )
-from app.services.user_service.role import RoleService
-from app.services.user_service.security import SecurityService
+from app.services.user_service.user_service_role import RoleService
+from app.services.user_service.user_service_security import SecurityService
 from app.services.user_service.user_management import UserManagementService
 
 logger = structlog.get_logger(__name__)
-
-ServiceType = TypeVar("ServiceType", bound=BaseService)
 
 
 class ServiceRegistry:
@@ -48,9 +46,11 @@ class ServiceRegistry:
             cls._instance._logger = logger.bind(component="ServiceRegistry")
         return cls._instance
 
-    def register(
+    def register[
+        T: BaseService
+    ](
         self,
-        service_class: Type[ServiceType],
+        service_class: Type[T],
         *,
         name: Optional[str] = None,
         dependencies: Optional[Dict[str, str]] = None,
@@ -85,11 +85,7 @@ class ServiceRegistry:
             dependencies=list(dependencies.keys()) if dependencies else [],
         )
 
-    def get_service(
-        self,
-        service_name: str,
-        db: Session,
-    ) -> ServiceType:
+    def get_service[T: BaseService](self, service_name: str, db: Session) -> T:
         """
         Get or create a service instance.
 
@@ -110,87 +106,41 @@ class ServiceRegistry:
         service_info = self._services[service_name]
         if not service_info["instance"]:
             try:
-                # Resolve dependencies
-                resolved_deps = {}
-                for dep_name, dep_service_name in service_info["dependencies"].items():
-                    resolved_deps[dep_name] = self.get_service(dep_service_name, db)
+                resolved_deps = {
+                    dep_name: self.get_service(dep_service_name, db)
+                    for dep_name, dep_service_name in service_info[
+                        "dependencies"
+                    ].items()
+                }
 
-                # Create service instance
                 service_info["instance"] = service_info["class"](
-                    db=db,
-                    **resolved_deps,
-                    **service_info["params"],
+                    db=db, **resolved_deps, **service_info["params"]
                 )
-                self._logger.info(
-                    "service_initialized",
-                    service=service_name,
-                )
-
+                self._logger.info("service_initialized", service=service_name)
             except Exception as e:
                 self._logger.error(
-                    "service_initialization_failed",
-                    service=service_name,
-                    error=str(e),
+                    "service_initialization_failed", service=service_name, error=str(e)
                 )
                 raise DependencyError(
                     f"Failed to initialize service {service_name}: {str(e)}"
                 ) from e
 
-        return cast(ServiceType, service_info["instance"])
+        return cast(T, service_info["instance"])
 
     @contextmanager
-    def service_context(
-        self,
-        service_name: str,
-        db: Session,
-    ):
-        """
-        Context manager for service usage.
-
-        Provides a service instance within a context, handling cleanup
-        when the context exits.
-
-        Args:
-            service_name: Name of the service to use.
-            db: Database session for service initialization.
-
-        Yields:
-            Initialized service instance.
-
-        Example:
-            with registry.service_context("UserService", db) as service:
-                result = await service.get_user(user_id)
-        """
+    def service_context(self, service_name: str, db: Session):
         service = self.get_service(service_name, db)
         try:
             yield service
         finally:
-            # Perform any necessary cleanup
-            pass
+            self._logger.info(f"Service context closed for {service_name}")
 
-    def create_dependency(
-        self,
-        service_name: str,
-    ) -> Any:
+    def create_dependency(self, service_name: str) -> Any:
         """
         Create a FastAPI dependency for a service.
-
-        Args:
-            service_name: Name of the service to create dependency for.
-
-        Returns:
-            FastAPI dependency callable.
-
-        Example:
-            @router.get("/users/{user_id}")
-            async def get_user(
-                user_id: int,
-                service: UserService = Depends(registry.create_dependency("UserService"))
-            ):
-                return await service.get_user(user_id)
         """
 
-        def get_service(db: Session = Depends(get_db)) -> ServiceType:
+        def get_service(db: Session = Depends(get_db)) -> BaseService:
             return self.get_service(service_name, db)
 
         return get_service
@@ -198,9 +148,6 @@ class ServiceRegistry:
     def reset(self) -> None:
         """
         Reset the registry, clearing all service instances.
-
-        This is primarily useful for testing scenarios where you need
-        to reset the state between tests.
         """
         self._services.clear()
         self._initialized = False
@@ -212,21 +159,10 @@ registry = ServiceRegistry()
 
 
 def get_registry() -> ServiceRegistry:
-    """
-    Get the global service registry instance.
-
-    Returns:
-        ServiceRegistry: Global registry instance.
-
-    Example:
-        registry = get_registry()
-        registry.register(UserService, name="UserService")
-    """
     return registry
 
 
 def register_core_services() -> None:
-    """Register all core application services."""
     if registry._initialized:
         logger.info("Services already registered")
         return
@@ -234,39 +170,18 @@ def register_core_services() -> None:
     logger.info("Starting core service registration")
 
     try:
-        # Register base services first
-        logger.info("Registering base services")
-        registry.register(
-            SecurityService,
-            name="SecurityService",
-        )
-
-        # Register user-related services
-        logger.info("Registering user services")
+        registry.register(SecurityService, name="SecurityService")
         registry.register(
             AuthenticationService,
             name="AuthenticationService",
-            dependencies={
-                "security_service": "SecurityService",
-            },
+            dependencies={"security_service": "SecurityService"},
         )
-
-        registry.register(
-            EmailVerificationService,
-            name="EmailVerificationService",
-        )
-
-        registry.register(
-            RoleService,
-            name="RoleService",
-        )
-
+        registry.register(EmailVerificationService, name="EmailVerificationService")
+        registry.register(RoleService, name="RoleService")
         registry.register(
             UserManagementService,
             name="UserManagementService",
-            dependencies={
-                "security_service": "SecurityService",
-            },
+            dependencies={"security_service": "SecurityService"},
         )
 
         registry._initialized = True

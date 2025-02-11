@@ -21,7 +21,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.endorsement_service.endorsement_rating import RatingMixin
+from app.services.endorsement_service.endorsement_service_rating import RatingMixin
 from app.services.notification_service import NotificationType
 from app.services.service_exceptions import StateError
 from app.db.models.contact_model import Contact

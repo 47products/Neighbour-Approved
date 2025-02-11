@@ -17,7 +17,7 @@ Dependencies:
     - 
 """
 
-from app.services.community_service.constants import (
+from app.services.community_service.community_service_constants import (
     MAX_MEMBERS_FREE,
     MAX_MEMBERS_PREMIUM,
     MAX_RELATIONSHIPS,

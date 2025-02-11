@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.db.models.community_model import Community, PrivacyLevel
 from app.db.models.user_model import User
 from app.db.repositories.community_repository import CommunityRepository
-from app.services.community_service.constants import (
+from app.services.community_service.community_service_constants import (
     MemberRole,
     MAX_MEMBERS_FREE,
     MAX_MEMBERS_PREMIUM,
