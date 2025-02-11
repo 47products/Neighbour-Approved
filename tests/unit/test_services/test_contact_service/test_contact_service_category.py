@@ -13,42 +13,10 @@ Fixtures required:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
-from app.services.contact_service.contact_service_category import ContactServiceCategory
-from app.db.models.contact_model import Contact
-from app.db.models.category_model import Category
+from unittest.mock import AsyncMock
 from app.services.service_exceptions import (
     ResourceNotFoundError,
 )
-
-
-@pytest.fixture
-def mock_contact():
-    """Create a dummy contact instance for testing."""
-    return Contact(id=1, contact_name="Test Contact", is_active=True, categories=[])
-
-
-@pytest.fixture
-def mock_category():
-    """Create a dummy category instance for testing."""
-    return Category(id=5, name="Plumbing")
-
-
-@pytest.fixture
-def mock_contact_repository(dummy_db):
-    """Create a mock ContactRepository for simulating database operations."""
-    repository = MagicMock()
-    repository.get = AsyncMock()
-    repository.update = AsyncMock()
-    return repository
-
-
-@pytest.fixture
-def contact_service_category(dummy_db, mock_contact_repository):
-    """Create an instance of ContactServiceCategory with mocked dependencies."""
-    service = ContactServiceCategory(db=dummy_db)
-    service.repository = mock_contact_repository  # Ensure repository is used
-    return service
 
 
 @pytest.mark.asyncio

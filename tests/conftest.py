@@ -38,6 +38,7 @@ from app.services.community_service.community_service_membership import (
     CommunityMembershipService,
 )
 from app.services.contact_service.contact_service_base import ContactService
+from app.services.contact_service.contact_service_category import ContactServiceCategory
 from app.services.user_service.user_service_base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
@@ -70,7 +71,6 @@ def dummy_db(mock_user, mock_contact, mock_category):
     """
     db = AsyncMock(spec=AsyncSession)
 
-    # Simulate fetching models from the database
     async def get_mock(model, obj_id):
         if model == User and obj_id == mock_user.id:
             return mock_user
@@ -216,13 +216,8 @@ def community_service_membership(dummy_db, mock_community_repository):
 
 @pytest.fixture
 def mock_contact():
-    """
-    Create a dummy contact instance for testing.
-
-    Returns:
-        Contact: A mocked contact instance.
-    """
-    return Contact(id=1, contact_name="Test Contact", is_active=True)
+    """Create a dummy contact instance for testing."""
+    return Contact(id=1, contact_name="Test Contact", is_active=True, categories=[])
 
 
 @pytest.fixture
@@ -256,6 +251,14 @@ def contact_service(dummy_db, mock_contact_repository):
     """
     service = ContactService(db=dummy_db)
     service._repository = mock_contact_repository
+    return service
+
+
+@pytest.fixture
+def contact_service_category(dummy_db, mock_contact_repository):
+    """Create an instance of ContactServiceCategory with mocked dependencies."""
+    service = ContactServiceCategory(db=dummy_db)
+    service.repository = mock_contact_repository  # Ensure repository is used
     return service
 
 
