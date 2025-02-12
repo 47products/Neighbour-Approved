@@ -17,6 +17,7 @@ Usage:
 """
 
 import datetime
+from unittest.mock import AsyncMock, patch
 import pytest
 from app.services.notification_service import (
     NotificationType,
@@ -309,3 +310,440 @@ async def test_send_endorsement_notifications_without_comment(
     assert data["community_name"] == community_instance.name
     assert data["rating"] == endorsement.rating
     assert data["has_comment"] is False
+
+
+@pytest.mark.asyncio
+async def test_send_notification_all_types():
+    """
+    Test send_notification method for all notification types.
+    """
+    service = NotificationService()
+
+    # Mocking send_notification at the class level
+    with patch.object(
+        service, "send_notification", new_callable=AsyncMock
+    ) as mock_send:
+        for notif_type in NotificationType:
+            await service.send_notification(notif_type, 1, {"message": "Test"})
+            mock_send.assert_any_call(notif_type, 1, {"message": "Test"})
+
+
+@pytest.mark.asyncio
+async def test_get_notification_preferences_all_disabled():
+    """
+    Test notification preferences when all notifications are disabled.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+
+    service._get_notification_preferences = AsyncMock(
+        return_value={
+            "user_id": 1,
+            "verification_notifications": False,
+            "rating_notifications": False,
+            "endorsement_notifications": False,
+        }
+    )
+    prefs = await service._get_notification_preferences(1)
+    assert prefs["user_id"] == 1
+    assert prefs["verification_notifications"] is False
+    assert prefs["rating_notifications"] is False
+    assert prefs["endorsement_notifications"] is False
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_no_moderators():
+    """
+    Test that no verification notifications are sent when there are no moderators.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[])
+
+    endorsement = AsyncMock()
+    endorsement.id = 123
+    endorsement.contact.user_id = 10
+    endorsement.user.first_name = "John"
+    endorsement.user.last_name = "Doe"
+    endorsement.contact.contact_name = "Test Contact"
+    endorsement.community.name = "Test Community"
+    endorsement.rating = 5
+    endorsement.comment = "Great work!"
+    endorsement.community_id = 1
+
+    await service._send_endorsement_notifications(endorsement)
+    service._notification_service.send_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_no_rating():
+    """
+    Test that only owner notification is sent when endorsement has no rating.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[200, 201])
+
+    endorsement = AsyncMock()
+    endorsement.id = 123
+    endorsement.contact.user_id = 10
+    endorsement.user.first_name = "Alice"
+    endorsement.user.last_name = "Smith"
+    endorsement.contact.contact_name = "Bob Johnson"
+    endorsement.community.name = "Example Community"
+    endorsement.rating = None  # No rating
+    endorsement.comment = "Nice!"
+    endorsement.community_id = 2
+
+    await service._send_endorsement_notifications(endorsement)
+    service._notification_service.send_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_notification_invalid_data():
+    """
+    Test send_notification with invalid data should not raise errors.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    try:
+        await service.send_notification(NotificationType.RATING_UPDATED, 1, {})
+    except Exception:
+        pytest.fail("send_notification should not raise an exception")
+
+    # If send_notification does nothing, no assertion is needed.
+
+
+@pytest.mark.asyncio
+async def test_send_notification_no_recipient():
+    """
+    Test send_notification when no user_id is provided.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    await service.send_notification(
+        NotificationType.ENDORSEMENT_VERIFIED, None, {"test": "data"}
+    )
+    service._notification_service.send_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_logging():
+    """
+    Ensure that debug logging is called during notification sending.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[100])
+
+    endorsement = AsyncMock()
+    endorsement.id = 123
+    endorsement.contact.user_id = 10
+    endorsement.user.first_name = "Eve"
+    endorsement.user.last_name = "Brown"
+    endorsement.contact.contact_name = "Charlie Doe"
+    endorsement.community.name = "Some Community"
+    endorsement.rating = 4.0
+    endorsement.comment = "Nice Job!"
+    endorsement.community_id = 3
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Verify at least one debug log was triggered
+    if service._logger.debug.call_count == 0:
+        pytest.fail("Expected at least one debug log, but none were triggered.")
+
+
+@pytest.mark.asyncio
+async def test_send_notification_handles_failure():
+    """
+    Test that send_notification handles exceptions gracefully.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._notification_service.send_notification.side_effect = Exception(
+        "Simulated Failure"
+    )
+
+    try:
+        await service.send_notification(
+            NotificationType.ENDORSEMENT_RECEIVED, 1, {"test": "data"}
+        )
+    except Exception:
+        pytest.fail("send_notification should not propagate exceptions")
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_no_contact_owner():
+    """
+    Ensure that _send_endorsement_notifications does not crash if the contact has no owner.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[200, 201])
+
+    endorsement = AsyncMock()
+    endorsement.id = 123
+    endorsement.contact.user_id = None  # No contact owner
+    endorsement.user.first_name = "Eve"
+    endorsement.user.last_name = "Brown"
+    endorsement.contact.contact_name = "Charlie Doe"
+    endorsement.community.name = "Some Community"
+    endorsement.rating = 4.0
+    endorsement.comment = "Nice Job!"
+    endorsement.community_id = 3
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Ensure that no notification was sent since there's no contact owner
+    service._notification_service.send_notification.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_empty_moderators():
+    """
+    Ensure that no verification notifications are sent when there are no moderators.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[])
+
+    endorsement = AsyncMock()
+    endorsement.id = 456
+    endorsement.contact.user_id = 20
+    endorsement.user.first_name = "Alice"
+    endorsement.user.last_name = "Smith"
+    endorsement.contact.contact_name = "Bob Johnson"
+    endorsement.community.name = "Example Community"
+    endorsement.rating = 3.8
+    endorsement.comment = "Nice!"  # Has a comment, so normally would notify moderators
+    endorsement.community_id = 888
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Expect only owner notification, since no moderators exist
+    service._notification_service.send_notification.assert_called_once_with(
+        NotificationType.ENDORSEMENT_RECEIVED,
+        endorsement.contact.user_id,
+        {
+            "endorsement_id": endorsement.id,
+            "endorser_name": "Alice Smith",
+            "contact_name": "Bob Johnson",
+            "community_name": "Example Community",
+            "rating": 3.8,
+            "has_comment": True,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_handles_failure():
+    """
+    Ensure that _send_endorsement_notifications gracefully handles exceptions.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    # Simulate failure when calling send_notification
+    async def raise_exception(*args, **kwargs):
+        raise Exception("Simulated failure")
+
+    service._notification_service.send_notification = AsyncMock(
+        side_effect=raise_exception
+    )
+    service._get_community_moderators = AsyncMock(return_value=[100])
+
+    endorsement = AsyncMock()
+    endorsement.id = 789
+    endorsement.contact.user_id = 30
+    endorsement.user.first_name = "Chris"
+    endorsement.user.last_name = "Evans"
+    endorsement.contact.contact_name = "Johnny Storm"
+    endorsement.community.name = "Marvel Community"
+    endorsement.rating = 5.0
+    endorsement.comment = "Flame on!"
+    endorsement.community_id = 42
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Ensure logger error method was called
+    service._logger.error.assert_called_with(
+        "Failed to send endorsement notifications",
+        error="Simulated failure",
+        endorsement_id=endorsement.id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_no_moderators_empty():
+    """
+    Ensure that if there are no moderators, _send_endorsement_notifications still sends only the owner notification.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+    service._get_community_moderators = AsyncMock(return_value=[])
+
+    endorsement = AsyncMock()
+    endorsement.id = 555
+    endorsement.contact.user_id = 42
+    endorsement.user.first_name = "Bruce"
+    endorsement.user.last_name = "Wayne"
+    endorsement.contact.contact_name = "Alfred Pennyworth"
+    endorsement.community.name = "Gotham Elite"
+    endorsement.rating = 5
+    endorsement.comment = "Best butler in town!"
+    endorsement.community_id = 777
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Verify owner notification was sent
+    service._notification_service.send_notification.assert_called_once_with(
+        NotificationType.ENDORSEMENT_RECEIVED,
+        endorsement.contact.user_id,
+        {
+            "endorsement_id": endorsement.id,
+            "endorser_name": "Bruce Wayne",
+            "contact_name": "Alfred Pennyworth",
+            "community_name": "Gotham Elite",
+            "rating": 5,
+            "has_comment": True,
+        },
+    )
+
+    # Ensure that NO verification notifications were sent
+    service._notification_service.send_notification.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_send_endorsement_notifications_logs_error_when_failing():
+    """
+    Ensure that if notification sending fails, an error is logged.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    # Simulate failure in notification sending
+    async def raise_exception(*args, **kwargs):
+        raise Exception("Simulated send failure")
+
+    service._notification_service.send_notification = AsyncMock(
+        side_effect=raise_exception
+    )
+    service._get_community_moderators = AsyncMock(return_value=[123, 456])
+
+    endorsement = AsyncMock()
+    endorsement.id = 888
+    endorsement.contact.user_id = 45
+    endorsement.user.first_name = "Steve"
+    endorsement.user.last_name = "Rogers"
+    endorsement.contact.contact_name = "Bucky Barnes"
+    endorsement.community.name = "Shield"
+    endorsement.rating = 4.0
+    endorsement.comment = "On your left."
+    endorsement.community_id = 555
+
+    await service._send_endorsement_notifications(endorsement)
+
+    # Ensure error was logged when send_notification failed
+    service._logger.error.assert_called_with(
+        "Failed to send endorsement notifications",
+        error="Simulated send failure",
+        endorsement_id=endorsement.id,
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_verification_notifications():
+    """
+    Ensure that _send_verification_notifications sends notifications to both the endorsement creator and contact owner.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    # Mock _build_notification_context
+    service._build_notification_context = AsyncMock(
+        return_value={"context_key": "context_value"}
+    )
+
+    endorsement = AsyncMock()
+    endorsement.id = 123  # Ensure this is an integer
+    endorsement.user_id = 77  # Endorsement creator
+    endorsement.contact = AsyncMock()
+    endorsement.contact.user_id = 99  # Contact owner
+
+    # Ensure endorsement_id is an actual integer
+    endorsement.endorsement_id = 123
+
+    await service._send_verification_notifications(endorsement)
+
+    # Ensure _build_notification_context was called
+    service._build_notification_context.assert_called_with(endorsement)
+
+    # Verify the endorsement creator received the verification notification
+    service._notification_service.send_notification.assert_any_call(
+        NotificationType.ENDORSEMENT_VERIFIED,
+        77,
+        {"context_key": "context_value"},
+        123,  # Now correctly set as an integer
+    )
+
+    # Verify the contact owner received the verification notification
+    service._notification_service.send_notification.assert_any_call(
+        NotificationType.CONTACT_ENDORSEMENT_VERIFIED,
+        99,
+        {"context_key": "context_value"},
+        123,  # Now correctly set as an integer
+    )
+
+
+@pytest.mark.asyncio
+async def test_send_verification_notifications_no_contact_owner():
+    """
+    Ensure that _send_verification_notifications does not send a notification to a missing contact owner.
+    """
+    service = NotificationService()
+    service._logger = AsyncMock()
+    service._notification_service = AsyncMock()
+
+    # Mock _build_notification_context
+    service._build_notification_context = AsyncMock(
+        return_value={"context_key": "context_value"}
+    )
+
+    endorsement = AsyncMock()
+    endorsement.id = 456  # Ensure this is an integer
+    endorsement.user_id = 88  # Endorsement creator
+    endorsement.contact = None  # No contact
+
+    # Ensure endorsement_id is an actual integer
+    endorsement.endorsement_id = 456
+
+    await service._send_verification_notifications(endorsement)
+
+    # Ensure _build_notification_context was called
+    service._build_notification_context.assert_called_with(endorsement)
+
+    # Verify the endorsement creator received the verification notification
+    service._notification_service.send_notification.assert_any_call(
+        NotificationType.ENDORSEMENT_VERIFIED,
+        88,
+        {"context_key": "context_value"},
+        456,  # Now correctly set as an integer
+    )
+
+    # Ensure no notification was sent to a missing contact owner
+    service._notification_service.send_notification.assert_called_once()

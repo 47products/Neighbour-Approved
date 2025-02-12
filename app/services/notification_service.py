@@ -163,48 +163,63 @@ class NotificationService:
     ) -> None:
         """
         Send notifications related to a new endorsement.
-
-        This method handles all notifications triggered by endorsement creation,
-        including owner notification and verification requests.
-
-        Args:
-            endorsement: Newly created endorsement object
-
-        Note:
-            Moderators are notified if the endorsement includes both rating and comment.
         """
-        # Notify contact owner
-        await self._notification_service.send_notification(
-            NotificationType.ENDORSEMENT_RECEIVED,
-            endorsement.contact.user_id,
-            {
-                "endorsement_id": endorsement.id,
-                "endorser_name": f"{endorsement.user.first_name} {endorsement.user.last_name}",
-                "contact_name": endorsement.contact.contact_name,
-                "community_name": endorsement.community.name,
-                "rating": endorsement.rating,
-                "has_comment": bool(endorsement.comment),
-            },
-        )
+        if endorsement.contact.user_id is None:
+            self._logger.debug("Skipping endorsement notification: No contact owner.")
+            return  # Prevent sending notifications when there's no contact owner.
 
-        # Request verification if needed
-        if endorsement.rating and endorsement.comment:
-            for moderator_id in await self._get_community_moderators(
-                endorsement.community_id
-            ):
-                await self._notification_service.send_notification(
-                    NotificationType.VERIFICATION_REQUESTED,
-                    moderator_id,
-                    {
-                        "endorsement_id": endorsement.id,
-                        "contact_name": endorsement.contact.contact_name,
-                        "community_name": endorsement.community.name,
-                    },
+        try:
+            self._logger.debug(
+                "Sending endorsement notification",
+                endorsement_id=endorsement.id,
+                user_id=endorsement.contact.user_id,
+                rating=endorsement.rating,
+                has_comment=bool(endorsement.comment),
+            )
+
+            # Notify contact owner
+            await self._notification_service.send_notification(
+                NotificationType.ENDORSEMENT_RECEIVED,
+                endorsement.contact.user_id,
+                {
+                    "endorsement_id": endorsement.id,
+                    "endorser_name": f"{endorsement.user.first_name} {endorsement.user.last_name}",
+                    "contact_name": endorsement.contact.contact_name,
+                    "community_name": endorsement.community.name,
+                    "rating": endorsement.rating,
+                    "has_comment": bool(endorsement.comment),
+                },
+            )
+
+            # Request verification if needed
+            if endorsement.rating and endorsement.comment:
+                moderators = await self._get_community_moderators(
+                    endorsement.community_id
                 )
 
+                self._logger.debug(
+                    "Notifying moderators for verification",
+                    endorsement_id=endorsement.id,
+                    community_id=endorsement.community_id,
+                    moderator_count=len(moderators),
+                )
 
-class DummyNotificationMixin:
-    # Assuming other methods are defined, including _build_notification_context and _calculate_rating_impact
+                for moderator_id in moderators:
+                    await self._notification_service.send_notification(
+                        NotificationType.VERIFICATION_REQUESTED,
+                        moderator_id,
+                        {
+                            "endorsement_id": endorsement.id,
+                            "contact_name": endorsement.contact.contact_name,
+                            "community_name": endorsement.community.name,
+                        },
+                    )
+        except Exception as e:
+            self._logger.error(
+                "Failed to send endorsement notifications",
+                error=str(e),
+                endorsement_id=endorsement.id,
+            )
 
     async def _send_verification_notifications(self, endorsement):
         # Build the notification context.
