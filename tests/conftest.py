@@ -12,15 +12,10 @@ Key fixtures include:
 - mock_repository: Mock repository for simulating database interactions.
 - base_user_service: Instance of BaseUserService with mocked dependencies.
 - dummy_community: A dummy community model for testing.
+- dummy_model: A dummy SQLAlchemy model class for testing retrieval mixin operations.
 
 Usage:
     In tests, simply import the fixture by its name.
-
-Dependencies:
-    - pytest
-    - fastapi.testclient
-    - dotenv
-    - app.main: The FastAPI application instance.
 """
 
 import os
@@ -31,6 +26,7 @@ from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 import pytest
 from fastapi.testclient import TestClient
+
 from app.db.models.category_model import Category
 from app.db.models.contact_model import Contact
 from app.db.models.service_model import Service
@@ -108,11 +104,7 @@ def dummy_db(mock_user, mock_contact, mock_category, mock_service):
     """
     Create a dummy asynchronous database session using AsyncMock.
 
-    Ensures db.get(User, user_id), db.get(Contact, contact_id), db.get(Category, category_id),
-    and db.get(Service, service_id) return the correct instances.
-
-    Returns:
-        AsyncMock: A mocked AsyncSession with async methods.
+    Ensures db.get(User, user_id), db.get(Contact, contact_id), etc. return the correct instances.
     """
     db = AsyncMock(spec=AsyncSession)
 
@@ -125,14 +117,11 @@ def dummy_db(mock_user, mock_contact, mock_category, mock_service):
             return mock_category
         if model == Service and obj_id == mock_service.id:
             return mock_service
-        return None  # Simulate entity not found
+        return None
 
-    db.get = AsyncMock(side_effect=get_mock)  # Mock db.get() properly
-
-    # Mock .query() to support .filter_by().first()
+    db.get = AsyncMock(side_effect=get_mock)
     db.query = MagicMock()
     db.query.return_value.filter_by.return_value.first = MagicMock()
-
     db.commit = AsyncMock()
     db.rollback = AsyncMock()
 
@@ -143,9 +132,6 @@ def dummy_db(mock_user, mock_contact, mock_category, mock_service):
 def sync_dummy_db():
     """
     Create a dummy synchronous database session.
-
-    Returns:
-        MagicMock: A mocked synchronous Session.
     """
     return MagicMock(spec=Session)
 
@@ -154,9 +140,6 @@ def sync_dummy_db():
 def mock_user():
     """
     Create a mock user object for testing.
-
-    Returns:
-        User: A mocked user instance with predefined attributes.
     """
     return User(id=1, email="test@example.com", is_active=True)
 
@@ -164,15 +147,7 @@ def mock_user():
 @pytest.fixture
 def mock_repository(dummy_db):
     """
-    Create a mock UserRepository for simulating database operations.
-
-    This fixture replaces actual repository calls with AsyncMock instances.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-
-    Returns:
-        MagicMock: A mocked UserRepository instance.
+    Create a mock repository instance simulating database operations.
     """
     repository = MagicMock(spec=UserRepository)
     repository.get_by_email = AsyncMock(return_value=None)
@@ -185,13 +160,6 @@ def mock_repository(dummy_db):
 def base_user_service(dummy_db, mock_repository):
     """
     Create an instance of BaseUserService with mocked dependencies.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-        mock_repository: The mocked UserRepository instance.
-
-    Returns:
-        BaseUserService: An instance with mocked database and repository.
     """
     service = BaseUserService(db=dummy_db)
     service._repository = mock_repository
@@ -203,15 +171,11 @@ def base_user_service(dummy_db, mock_repository):
 def dummy_community():
     """
     Create a dummy community instance for testing.
-
-    Returns:
-        DummyCommunity: A class that can be instantiated to simulate a community.
     """
 
     class DummyCommunity:
         def __init__(self, active=True):
             self.is_active = active
-            # Provide a dummy _sa_instance_state to satisfy SQLAlchemy instrumentation.
             self._sa_instance_state = object()
 
     return DummyCommunity
@@ -221,12 +185,6 @@ def dummy_community():
 def mock_community_repository(dummy_db):
     """
     Create a mock CommunityRepository for simulating database operations.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-
-    Returns:
-        MagicMock: A mocked CommunityRepository instance.
     """
     return MagicMock(spec=CommunityRepository)
 
@@ -235,13 +193,6 @@ def mock_community_repository(dummy_db):
 def community_service(dummy_db, mock_community_repository):
     """
     Create an instance of CommunityService with mocked dependencies.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-        mock_community_repository: The mocked CommunityRepository instance.
-
-    Returns:
-        CommunityService: An instance with mocked dependencies.
     """
     return CommunityService(db=dummy_db, repository=mock_community_repository)
 
@@ -250,13 +201,6 @@ def community_service(dummy_db, mock_community_repository):
 def community_service_membership(dummy_db, mock_community_repository):
     """
     Create an instance of CommunityMembershipService with mocked dependencies.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-        mock_community_repository: The mocked CommunityRepository instance.
-
-    Returns:
-        CommunityMembershipService: An instance with mocked dependencies.
     """
     service = CommunityMembershipService(db=dummy_db)
     service.repository = mock_community_repository
@@ -267,9 +211,6 @@ def community_service_membership(dummy_db, mock_community_repository):
 def mock_db():
     """
     Provide a mocked database session.
-
-    Returns:
-        MagicMock: A mock of the database session.
     """
     return MagicMock()
 
@@ -284,9 +225,6 @@ def mock_contact():
 def mock_contact_data():
     """
     Create a mock contact data object for validation tests.
-
-    Returns:
-        A class mimicking an actual contact data object with necessary attributes.
     """
 
     class MockContactData:
@@ -303,12 +241,6 @@ def mock_contact_data():
 def mock_contact_repository(dummy_db):
     """
     Create a mock ContactRepository for simulating database operations.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-
-    Returns:
-        MagicMock: A mocked ContactRepository instance.
     """
     repository = MagicMock()
     repository.get = AsyncMock()
@@ -320,14 +252,9 @@ def mock_contact_repository(dummy_db):
 def contact_service(dummy_db, mock_contact_repository):
     """
     Create an instance of ContactService with mocked dependencies.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-        mock_contact_repository: The mocked ContactRepository instance.
-
-    Returns:
-        ContactService: An instance with mocked dependencies.
     """
+    from app.services.contact_service.contact_service_base import ContactService
+
     service = ContactService(db=dummy_db)
     service._repository = mock_contact_repository
     return service
@@ -335,9 +262,15 @@ def contact_service(dummy_db, mock_contact_repository):
 
 @pytest.fixture
 def contact_service_category(dummy_db, mock_contact_repository):
-    """Create an instance of ContactServiceCategory with mocked dependencies."""
+    """
+    Create an instance of ContactServiceCategory with mocked dependencies.
+    """
+    from app.services.contact_service.contact_service_category import (
+        ContactServiceCategory,
+    )
+
     service = ContactServiceCategory(db=dummy_db)
-    service.repository = mock_contact_repository  # Ensure repository is used
+    service.repository = mock_contact_repository
     return service
 
 
@@ -351,13 +284,11 @@ def mock_category():
 def contact_service_endorsement(mock_db):
     """
     Create an instance of ContactServiceEndorsement with a mocked database session.
-
-    Args:
-        mock_db (MagicMock): Mocked database session.
-
-    Returns:
-        ContactServiceEndorsement: Instance of the endorsement service.
     """
+    from app.services.contact_service.contact_service_endorsement import (
+        ContactServiceEndorsement,
+    )
+
     return ContactServiceEndorsement(db=mock_db)
 
 
@@ -371,12 +302,6 @@ def mock_service():
 def mock_service_repository(dummy_db):
     """
     Create a mock ServiceRepository for simulating database operations.
-
-    Args:
-        dummy_db: The mocked asynchronous database session.
-
-    Returns:
-        MagicMock: A mocked ServiceRepository instance.
     """
     repository = MagicMock()
     repository.get = AsyncMock()
@@ -388,15 +313,11 @@ def mock_service_repository(dummy_db):
 def contact_service_service(dummy_db, mock_contact_repository, mock_service_repository):
     """
     Create an instance of ContactServiceService with mocked dependencies.
-
-    Args:
-        dummy_db (AsyncMock): The mocked asynchronous database session.
-        mock_contact_repository (MagicMock): The mocked ContactRepository instance.
-        mock_service_repository (MagicMock): The mocked ServiceRepository instance.
-
-    Returns:
-        ContactServiceService: An instance with mocked dependencies.
     """
+    from app.services.contact_service.contact_service_service import (
+        ContactServiceService,
+    )
+
     service = ContactServiceService(db=dummy_db)
     service.contact_repository = mock_contact_repository
     service.service_repository = mock_service_repository
@@ -407,13 +328,11 @@ def contact_service_service(dummy_db, mock_contact_repository, mock_service_repo
 def contact_service_validation(dummy_db):
     """
     Create an instance of ContactServiceValidation with a mocked database session.
-
-    Args:
-        dummy_db (AsyncMock): The mocked asynchronous database session.
-
-    Returns:
-        ContactServiceValidation: An instance with mocked dependencies.
     """
+    from app.services.contact_service.contact_service_validation import (
+        ContactServiceValidation,
+    )
+
     return ContactServiceValidation(db=dummy_db)
 
 
@@ -421,13 +340,11 @@ def contact_service_validation(dummy_db):
 def contact_service_verification(dummy_db):
     """
     Create an instance of ContactServiceVerification with a mocked database session.
-
-    Args:
-        dummy_db (AsyncMock): The mocked asynchronous database session.
-
-    Returns:
-        ContactServiceVerification: An instance with mocked dependencies.
     """
+    from app.services.contact_service.contact_service_verification import (
+        ContactServiceVerification,
+    )
+
     return ContactServiceVerification(db=dummy_db)
 
 
@@ -435,10 +352,9 @@ def contact_service_verification(dummy_db):
 def mock_verifiable_contact():
     """
     Create a mock contact that meets verification criteria.
-
-    Returns:
-        MagicMock: A mock Contact instance with verification attributes.
     """
+    from app.db.models.contact_model import Contact
+
     contact = MagicMock(spec=Contact)
     contact.id = 1
     contact.is_active = True
@@ -446,7 +362,7 @@ def mock_verifiable_contact():
     contact.contact_number = "123456789"
     contact.primary_contact_contact_number = "987654321"
     contact.endorsements_count = 3
-    contact.communities = [MagicMock()]  # Simulating active community links
+    contact.communities = [MagicMock()]
     contact.is_verified = False
     contact.verification_date = None
     contact.verification_notes = None
@@ -457,18 +373,17 @@ def mock_verifiable_contact():
 def mock_unverifiable_contact():
     """
     Create a mock contact that does not meet verification criteria.
-
-    Returns:
-        MagicMock: A mock Contact instance missing required attributes.
     """
+    from app.db.models.contact_model import Contact
+
     contact = MagicMock(spec=Contact)
     contact.id = 2
-    contact.is_active = False  # Inactive contact should not be verified
+    contact.is_active = False
     contact.email = "unverified@example.com"
-    contact.contact_number = None  # Missing phone number
+    contact.contact_number = None
     contact.primary_contact_contact_number = None
-    contact.endorsements_count = 1  # Not enough endorsements
-    contact.communities = []  # No linked communities
+    contact.endorsements_count = 1
+    contact.communities = []
     return contact
 
 
@@ -476,27 +391,16 @@ def mock_unverifiable_contact():
 def mock_model():
     """
     Create a mock SQLAlchemy model class with a valid __name__ attribute.
-
-    Returns:
-        MagicMock: A mocked SQLAlchemy model class.
     """
     mock = MagicMock(spec=User)
-    mock.__name__ = "User"  # Manually set the name attribute to avoid AttributeError
+    mock.__name__ = "User"
     return mock
 
 
 @pytest.fixture
 def mock_repository(dummy_db):
     """
-    Create a mock repository instance.
-
-    This fixture provides a repository mock that simulates database operations.
-
-    Args:
-        dummy_db (AsyncMock): The mocked database session.
-
-    Returns:
-        MagicMock: A mocked repository instance.
+    Create a mock repository instance that simulates database operations.
     """
     repo = MagicMock()
     repo.db = dummy_db
@@ -510,7 +414,32 @@ def mock_repository(dummy_db):
 
 @pytest.fixture
 def dummy_model():
-    class DummyModel:
-        __name__ = "DummyModel"
+    """
+    Fixture for a dummy User model with necessary attributes.
 
-    return DummyModel
+    This model is built on a SQLAlchemy Table to simulate real column expressions.
+    Returns a mapped model class using declarative_base.
+    """
+    from sqlalchemy import Column, Integer, String, Boolean
+    from sqlalchemy.orm import declarative_base
+
+    Base = declarative_base()
+
+    class DummyUserModel(Base):
+        __tablename__ = "dummy"
+        id = Column(Integer, primary_key=True)
+        email = Column(String)
+        first_name = Column(String)
+        last_name = Column(String)
+        is_active = Column(Boolean)
+        email_verified = Column(Boolean)
+
+    # Simulate a roles attribute with an 'any' method.
+    from sqlalchemy.sql import literal
+
+    class DummyRoles:
+        def any(self, **kwargs):
+            return literal(True)
+
+    DummyUserModel.roles = DummyRoles()
+    return DummyUserModel
