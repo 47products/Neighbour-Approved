@@ -30,12 +30,12 @@ def test_max_contacts_free():
     assert MAX_CONTACTS_FREE == 10, "Unexpected value for MAX_CONTACTS_FREE"
 
 
-def test_max_services():
+def test_max_services(test_config):
     """
     Ensure that the maximum number of services a contact can have is correctly defined.
     """
     assert isinstance(MAX_SERVICES, int), "MAX_SERVICES should be an integer"
-    assert MAX_SERVICES == 20, "Unexpected value for MAX_SERVICES"
+    assert MAX_SERVICES == test_config["max_services"]
 
 
 def test_max_categories():

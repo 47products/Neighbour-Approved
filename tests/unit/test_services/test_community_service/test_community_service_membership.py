@@ -127,7 +127,7 @@ async def test_manage_membership_invalid_role(
 
 @pytest.mark.asyncio
 async def test_manage_membership_quota_exceeded(
-    community_service_membership, mock_community_repository, mock_user
+    community_service_membership, mock_community_repository, mock_user, test_config
 ):
     """
     Test that trying to invite or approve a user when the community has reached its limit raises QuotaExceededError.
@@ -136,7 +136,7 @@ async def test_manage_membership_quota_exceeded(
     mock_community = Community(
         id=1, name="Test Community", privacy_level=PrivacyLevel.PUBLIC
     )
-    mock_community.total_count = MAX_MEMBERS_FREE  # Set to max limit
+    mock_community.total_count = test_config["max_members_free"]
     mock_community.is_premium = False  # Simulating a free-tier community
     mock_community_repository.get.return_value = mock_community
 
