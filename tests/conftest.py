@@ -23,6 +23,8 @@ Dependencies:
     - app.main: The FastAPI application instance.
 """
 
+import os
+from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -68,6 +70,37 @@ def test_client():
     """
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(scope="session")
+def test_config() -> Dict[str, Any]:
+    """
+    Provide test configuration values from environment variables.
+
+    Returns:
+        Dict[str, Any]: Dictionary containing all test configuration values.
+    """
+    return {
+        "max_services": int(os.getenv("MAX_SERVICES", 20)),
+        "max_categories": int(os.getenv("MAX_CATEGORIES", 5)),
+        "max_contacts_free": int(os.getenv("MAX_CONTACTS_FREE", 10)),
+        "max_communities_free": int(os.getenv("MAX_COMMUNITIES_FREE", 5)),
+        "max_members_free": int(os.getenv("MAX_MEMBERS_FREE", 50)),
+        "max_members_premium": int(os.getenv("MAX_MEMBERS_PREMIUM", 500)),
+        "max_relationships": int(os.getenv("MAX_RELATIONSHIPS", 10)),
+        "max_pending_invites": int(os.getenv("MAX_PENDING_INVITES", 100)),
+        "max_pending_verifications": int(os.getenv("MAX_PENDING_VERIFICATIONS", 5)),
+        "test_user_email": os.getenv("TEST_USER_EMAIL", "test@example.com"),
+        "test_user_id": int(os.getenv("TEST_USER_ID", 1)),
+        "test_verifier_id": int(os.getenv("TEST_VERIFIER_ID", 99)),
+        "test_community_name": os.getenv("TEST_COMMUNITY_NAME", "Test Community"),
+        "test_community_id": int(os.getenv("TEST_COMMUNITY_ID", 1)),
+        "test_contact_name": os.getenv("TEST_CONTACT_NAME", "Test Contact"),
+        "test_contact_id": int(os.getenv("TEST_CONTACT_ID", 1)),
+        "test_endorsement_id": int(os.getenv("TEST_ENDORSEMENT_ID", 123)),
+        "test_endorsement_rating": float(os.getenv("TEST_ENDORSEMENT_RATING", 4.0)),
+        "test_origin": os.getenv("TEST_ORIGIN", "http://example.com"),
+    }
 
 
 @pytest.fixture
