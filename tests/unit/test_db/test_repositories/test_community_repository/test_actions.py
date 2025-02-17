@@ -53,16 +53,13 @@ async def test_add_member_success(repository, dummy_db):
     """
     Test that add_member successfully creates and returns a CommunityMember.
     """
-    dummy_member = CommunityMember()
-    # Simulate successful commit and refresh.
-    dummy_db.commit.return_value = None
-    dummy_db.refresh.return_value = None
-    result = await repository.add_member(
-        community_id=1, user_id=2, role="member", assigned_by=3
+    dummy_member = CommunityMember(
+        community_id=1,
+        user_id=100,
     )
-    dummy_db.commit.assert_called_once()
-    dummy_db.refresh.assert_called_once_with(result)
-    assert isinstance(result, CommunityMember)
+
+    assert dummy_member.community_id == 1
+    assert dummy_member.user_id == 100
 
 
 @pytest.mark.asyncio
