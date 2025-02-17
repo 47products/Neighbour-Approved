@@ -267,8 +267,7 @@ class Category(
         calculated_depth = self.get_hierarchy_level()
         if calculated_depth != self.depth:
             raise ValueError(
-                f"Depth mismatch: stored={self.depth}, "
-                f"calculated={calculated_depth}"
+                f"Depth mismatch: stored={self.depth}, calculated={calculated_depth}"
             )
 
         calculated_path = "/".join(
@@ -279,9 +278,11 @@ class Category(
                 f"Path mismatch: stored={self.path}, calculated={calculated_path}"
             )
 
+        # Debugging: Print category IDs as we traverse
         visited = set()
         current = self
         while current:
+            print(f"Visiting category ID: {current.id}")  # Debugging line
             if current.id in visited:
                 raise ValueError("Circular reference detected in category hierarchy")
             visited.add(current.id)
@@ -300,10 +301,12 @@ class Category(
 
     def reorder_children(self, new_order: List[int]) -> None:
         """Reorder child categories based on provided order."""
-        if set(new_order) != set(child.id for child in self.children):
+        if set(new_order) != {child.id for child in self.children}:
             raise ValueError("New order must contain exactly the current child IDs")
 
         order_map = {id_: i for i, id_ in enumerate(new_order)}
 
         for child in self.children:
             child.sort_order = order_map[child.id]
+
+        self.children.sort(key=lambda x: x.sort_order)
