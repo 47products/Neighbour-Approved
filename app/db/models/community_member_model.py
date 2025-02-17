@@ -1,6 +1,6 @@
 """Community member association model definition module."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import Boolean, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -58,6 +58,25 @@ class CommunityMember(TimestampMixin, Base):
         default=True,
         nullable=False,
     )
+
+    def __init__(
+        self,
+        community_id: int,
+        user_id: int,
+        role: str = "member",
+        is_active: bool = True,
+        joined_at: Optional[datetime] = None,
+        role_assigned_at: Optional[datetime] = None,
+        role_assigned_by: Optional[int] = None,
+    ):
+        """Explicitly set default values when instantiated in Python."""
+        self.community_id = community_id
+        self.user_id = user_id
+        self.role = role
+        self.is_active = is_active
+        self.joined_at = joined_at or datetime.now(timezone.utc)
+        self.role_assigned_at = role_assigned_at
+        self.role_assigned_by = role_assigned_by
 
     def __repr__(self) -> str:
         """Return string representation."""
