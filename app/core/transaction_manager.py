@@ -2,14 +2,16 @@
 Transaction management module for the Neighbour Approved application.
 
 This module provides transaction management utilities and decorators to ensure
-data consistency across database operations. It implements both synchronous
-and asynchronous transaction handling with proper error management and rollback
-capabilities.
+data consistency across database operations. It implements both synchronous and
+asynchronous transaction handling with proper error management and rollback capabilities.
 """
 
-from contextlib import asynccontextmanager
+import asyncio
+import inspect
+from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
-from typing import Any, Callable, Generator, cast
+from typing import Any, AsyncGenerator, Callable, Generator, cast, Union
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,30 +22,28 @@ from app.core.error_handling import DatabaseError
 
 logger = structlog.get_logger(__name__)
 
+# Allow both synchronous and asynchronous sessions.
+DBSessionType = Union[Session, AsyncSession]
+
 
 class TransactionManager:
     """
     Manages database transactions with automatic commit/rollback handling.
-
-    This class provides methods for managing database transactions, ensuring
-    proper handling of commits and rollbacks, and maintaining transaction
-    isolation levels.
+    Supports both synchronous and asynchronous sessions.
     """
 
-    def __init__(self, db: AsyncSession):
-        """Initialize with database session."""
+    def __init__(self, db: DBSessionType):
+        """Initialize with a database session."""
         self.db = db
         self._logger = logger.bind(transaction_id=id(self))
 
-    def begin(self) -> None:
-        """Begin a new transaction."""
-        self._logger.debug("transaction_begin")
-        self.db.begin()
-
     def commit(self) -> None:
-        """Commit the current transaction."""
+        """Commit the current transaction synchronously."""
         try:
-            self.db.commit()
+            result = self.db.commit()
+            if inspect.isawaitable(result):
+                # Run the coroutine if commit is asynchronous.
+                asyncio.run(result)
             self._logger.debug("transaction_commit_success")
         except Exception as e:
             self._logger.error("transaction_commit_failed", error=str(e))
@@ -51,27 +51,41 @@ class TransactionManager:
             raise
 
     def rollback(self) -> None:
-        """Roll back the current transaction."""
+        """Roll back the current transaction synchronously."""
         try:
-            self.db.rollback()
+            result = self.db.rollback()
+            if inspect.isawaitable(result):
+                asyncio.run(result)
             self._logger.debug("transaction_rollback_success")
         except Exception as e:
             self._logger.error("transaction_rollback_failed", error=str(e))
             raise
 
-    @asynccontextmanager
-    async def transaction(self):
+    @contextmanager
+    def transaction_sync(self) -> Generator[DBSessionType, None, None]:
         """
-        Async context manager for handling transactions.
+        Synchronous context manager for handling transactions.
+        Uses a try/except/else pattern to avoid duplicate rollback calls.
+        """
+        try:
+            yield self.db
+        except Exception:
+            self.rollback()
+            raise
+        else:
+            self.commit()
 
-        Usage:
-            async with TransactionManager(db).transaction() as session:
-                session.add(some_object)
+    @asynccontextmanager
+    async def transaction(self) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Asynchronous context manager for handling transactions.
         """
 
         async def _do_rollback():
             try:
-                await self.db.rollback()
+                result = self.db.rollback()
+                if inspect.isawaitable(result):
+                    await result
             except Exception as e:
                 self._logger.error("rollback_failed", error=str(e))
                 raise
@@ -79,7 +93,9 @@ class TransactionManager:
         try:
             async with self.db.begin_nested():
                 yield self.db
-                await self.db.commit()
+                result = self.db.commit()
+                if inspect.isawaitable(result):
+                    await result
         except Exception as e:
             await _do_rollback()
             self._logger.error(
@@ -95,7 +111,12 @@ def transactional[T](func: Callable[..., T]) -> Callable[..., T]:
 
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> T:
-        db = next((arg for arg in args if isinstance(arg, Session)), None)
+        # Accept both Session and AsyncSession.
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        db = next(
+            (arg for arg in args if isinstance(arg, (Session, AsyncSession))), None
+        )
         if db is None:
             db = kwargs.get("db")
         if db is None:
@@ -103,9 +124,8 @@ def transactional[T](func: Callable[..., T]) -> Callable[..., T]:
             kwargs["db"] = db
 
         transaction_manager = TransactionManager(db)
-
         try:
-            with transaction_manager.transaction():
+            with transaction_manager.transaction_sync():
                 result = func(*args, **kwargs)
                 return result
         except Exception as e:
@@ -124,32 +144,28 @@ def transactional[T](func: Callable[..., T]) -> Callable[..., T]:
     return cast(Callable[..., T], wrapper)
 
 
-async def async_transactional[T](func: Callable[..., T]) -> Callable[..., T]:
+def async_transactional[T](func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator for managing database transactions in asynchronous functions.
-
-    Usage:
-        @async_transactional
-        async def create_user(db: Session, user_data: dict) -> User:
-            user = User(**user_data)
-            db.add(user)
-            return user
     """
 
     @wraps(func)
     async def wrapper(*args: Any, **kwargs: Any) -> T:
-        db = next((arg for arg in args if isinstance(arg, Session)), None)
+        # Accept both Session and AsyncSession.
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        db = next(
+            (arg for arg in args if isinstance(arg, (Session, AsyncSession))), None
+        )
         if db is None:
             db = kwargs.get("db")
-
         if db is None:
             db = next(get_db())
             kwargs["db"] = db
 
         transaction_manager = TransactionManager(db)
-
         try:
-            with transaction_manager.transaction():
+            async with transaction_manager.transaction():
                 result = await func(*args, **kwargs)
                 return result
         except Exception as e:
@@ -171,14 +187,11 @@ async def async_transactional[T](func: Callable[..., T]) -> Callable[..., T]:
 class NestedTransactionManager:
     """
     Manages nested transactions with proper savepoint handling.
-
-    This class provides support for nested transactions using SQLAlchemy's
-    savepoint functionality, allowing for more complex transaction patterns
-    while maintaining data consistency.
+    Assumes a synchronous Session.
     """
 
     def __init__(self, db: Session):
-        """Initialize with database session."""
+        """Initialize with a database session."""
         self.db = db
         self._logger = logger.bind(nested_transaction_id=id(self))
         self._savepoint = None
@@ -209,22 +222,19 @@ class NestedTransactionManager:
                 self._logger.error("nested_transaction_rollback_failed", error=str(e))
                 raise
 
-    @asynccontextmanager
+    @contextmanager
     def nested_transaction(self) -> Generator[Session, None, None]:
         """
         Context manager for handling nested transactions.
-
-        Usage:
-            with NestedTransactionManager(db).nested_transaction() as session:
-                session.add(some_object)
         """
         try:
             self.begin_nested()
             yield self.db
-            self.commit_nested()
         except Exception as e:
             self.rollback_nested()
             self._logger.error(
                 "nested_transaction_failed", error=str(e), error_type=type(e).__name__
             )
             raise
+        else:
+            self.commit_nested()
