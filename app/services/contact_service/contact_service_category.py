@@ -96,5 +96,5 @@ class ContactServiceCategory:
             return False
 
         contact.categories.remove(category)
-        self.db.commit()
+        await self.db.commit()
         return True

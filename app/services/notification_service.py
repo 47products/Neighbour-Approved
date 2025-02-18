@@ -22,6 +22,7 @@ Typical usage example:
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+import logging
 from typing import Dict, Any, Optional
 
 from app.db.models.contact_endorsement_model import ContactEndorsement
@@ -110,6 +111,10 @@ class NotificationService:
         )
     """
 
+    def __init__(self, logger=None):
+        self._logger = logging.getLogger(__name__)
+        logging.basicConfig(level=logging.DEBUG)
+
     async def send_notification(
         self, notification_type: NotificationType, user_id: int, data: Dict[str, Any]
     ) -> None:
@@ -144,7 +149,7 @@ class NotificationService:
             Current implementation returns default preferences. Production implementation
             would fetch user-specific preferences from persistent storage.
         """
-        self._logger.debug(
+        await self._logger.debug(
             "fetching_notification_preferences",
             user_id=user_id,
             source="default_configuration",  # Indicates using default values
@@ -165,11 +170,13 @@ class NotificationService:
         Send notifications related to a new endorsement.
         """
         if endorsement.contact.user_id is None:
-            self._logger.debug("Skipping endorsement notification: No contact owner.")
+            await self._logger.debug(
+                "Skipping endorsement notification: No contact owner."
+            )
             return  # Prevent sending notifications when there's no contact owner.
 
         try:
-            self._logger.debug(
+            await self._logger.debug(
                 "Sending endorsement notification",
                 endorsement_id=endorsement.id,
                 user_id=endorsement.contact.user_id,
@@ -197,7 +204,7 @@ class NotificationService:
                     endorsement.community_id
                 )
 
-                self._logger.debug(
+                await self._logger.debug(
                     "Notifying moderators for verification",
                     endorsement_id=endorsement.id,
                     community_id=endorsement.community_id,
@@ -215,7 +222,7 @@ class NotificationService:
                         },
                     )
         except Exception as e:
-            self._logger.error(
+            await self._logger.error(
                 "Failed to send endorsement notifications",
                 error=str(e),
                 endorsement_id=endorsement.id,

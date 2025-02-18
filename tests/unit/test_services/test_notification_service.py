@@ -38,6 +38,27 @@ class DummyLogger:
         # This method is intentionally left blank because logging is not required in tests.
         pass
 
+    def error(self, *args, **kwargs):
+        pass  # Simulates successful error logging
+
+
+class AsyncDummyLogger:
+    async def debug(self, *args, **kwargs):
+        pass
+
+    async def error(self, *args, **kwargs):
+        pass
+
+
+class DefaultLogger:
+    """A logger that prints messages to the console."""
+
+    def debug(self, message, *args, **kwargs):
+        print(f"DEBUG: {message} {' '.join(map(str, args))}")
+
+    def error(self, message, *args, **kwargs):
+        print(f"ERROR: {message} {' '.join(map(str, args))}")
+
 
 class DummyNotificationSender:
     """
@@ -180,12 +201,10 @@ async def test_send_notification_placeholder():
 async def test_get_notification_preferences():
     """
     Test that _get_notification_preferences returns default preferences.
-
-    The method should return a dictionary with the user_id and default boolean values.
     """
     service = NotificationService()
-    # Set a dummy logger to avoid attribute errors.
-    service._logger = DummyLogger()
+    service._logger = AsyncDummyLogger()  # Async Dummy Logger
+
     prefs = await service._get_notification_preferences(100)
     assert prefs["user_id"] == 100
     assert prefs["verification_notifications"] is True
@@ -200,26 +219,20 @@ async def test_send_endorsement_notifications_with_comment(
     """
     Test that _send_endorsement_notifications sends both the owner notification and moderator notifications
     when the endorsement has both a rating and a nonempty comment.
-
-    The owner notification should be sent with type ENDORSEMENT_RECEIVED, and moderator notifications
-    with type VERIFICATION_REQUESTED.
     """
     service = NotificationService()
-    service._logger = DummyLogger()
-    # Inject the dummy notification sender.
+    service._logger = AsyncDummyLogger()  # Use an AsyncDummyLogger
+
     service._notification_service = dummy_notification_sender
 
-    # Override _get_community_moderators to simulate returning moderator IDs.
     async def fake_get_community_moderators(community_id):
         return [200, 201]
 
     service._get_community_moderators = fake_get_community_moderators
 
-    # Create dummy endorsement objects.
     endorser = DummyUser("John", "Doe")
     contact = DummyContact(user_id=10, contact_name="Jane Smith")
-    # Use the dummy_community fixture to create a community instance.
-    community_cls = dummy_community  # dummy_community is a fixture returning a class.
+    community_cls = dummy_community
     community_instance = community_cls(active=True)
     community_instance.name = "Test Community"
 
@@ -229,15 +242,14 @@ async def test_send_endorsement_notifications_with_comment(
         user=endorser,
         community=community_instance,
         rating=4.2,
-        comment="Excellent work!",
+        comment="Excellent work!",  # Non-empty comment
         community_id=999,
     )
 
     await service._send_endorsement_notifications(endorsement)
-    # Expect one notification for the owner and one for each moderator (total 1 + 2 = 3).
+
     assert len(dummy_notification_sender.calls) == 3
 
-    # Verify owner notification details.
     owner_notification = dummy_notification_sender.calls[0]
     assert owner_notification[0] == NotificationType.ENDORSEMENT_RECEIVED
     assert owner_notification[1] == contact.user_id
@@ -248,9 +260,8 @@ async def test_send_endorsement_notifications_with_comment(
     assert data["contact_name"] == contact.contact_name
     assert data["community_name"] == community_instance.name
     assert data["rating"] == endorsement.rating
-    assert data["has_comment"] is True
+    assert data["has_comment"] is True  # There's a comment
 
-    # Verify moderator notifications.
     for notif in dummy_notification_sender.calls[1:]:
         assert notif[0] == NotificationType.VERIFICATION_REQUESTED
         assert notif[1] in [200, 201]
@@ -267,11 +278,9 @@ async def test_send_endorsement_notifications_without_comment(
     """
     Test that _send_endorsement_notifications sends only the owner notification
     when the endorsement's comment is empty.
-
-    In this scenario, no moderator notifications should be sent.
     """
     service = NotificationService()
-    service._logger = DummyLogger()
+    service._logger = AsyncDummyLogger()  # Use an AsyncDummyLogger
     service._notification_service = dummy_notification_sender
 
     async def fake_get_community_moderators(community_id):
@@ -296,7 +305,7 @@ async def test_send_endorsement_notifications_without_comment(
     )
 
     await service._send_endorsement_notifications(endorsement)
-    # Only the owner notification should be sent.
+
     assert len(dummy_notification_sender.calls) == 1
 
     owner_notification = dummy_notification_sender.calls[0]
@@ -309,7 +318,7 @@ async def test_send_endorsement_notifications_without_comment(
     assert data["contact_name"] == contact.contact_name
     assert data["community_name"] == community_instance.name
     assert data["rating"] == endorsement.rating
-    assert data["has_comment"] is False
+    assert data["has_comment"] is False  # There is no comment
 
 
 @pytest.mark.asyncio
