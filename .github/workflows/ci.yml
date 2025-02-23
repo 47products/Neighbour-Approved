@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     name: Build and Test Application
+    permissions:
+      contents: read
+      pull-requests: write
     runs-on: ubuntu-latest
     strategy:
       matrix:
