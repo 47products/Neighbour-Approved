@@ -359,6 +359,22 @@ async def subscription_exception_handler(
     )
 
 
+async def catch_all_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Handle any unhandled exceptions."""
+    logger.error(
+        "unhandled_error",
+        error=str(exc),
+        error_type=type(exc).__name__,
+        url=str(request.url),
+    )
+
+    return create_error_response(
+        "INTERNAL_SERVER_ERROR",
+        "An unexpected error occurred",
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
+
+
 def setup_error_handlers(app: FastAPI) -> None:
     """Configure error handlers for the application."""
     # Register feature flag and subscription handlers
@@ -371,17 +387,10 @@ def setup_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(BaseAppException, app_exception_handler)
 
     @app.exception_handler(Exception)
-    async def catch_all_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Handle any unhandled exceptions."""
-        logger.error(
-            "unhandled_error",
-            error=str(exc),
-            error_type=type(exc).__name__,
-            url=str(request.url),
-        )
+    async def _unhandled_exception_injected(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        # Just delegate to the top-level catch_all_handler
+        return await catch_all_handler(request, exc)
 
-        return create_error_response(
-            "INTERNAL_SERVER_ERROR",
-            "An unexpected error occurred",
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    app.add_exception_handler(Exception, catch_all_handler)
