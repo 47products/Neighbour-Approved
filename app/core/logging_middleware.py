@@ -61,13 +61,7 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
     Middleware for logging HTTP requests and responses.
 
     This middleware component provides comprehensive logging of HTTP request/response
-    cycles, including timing, status codes, and error tracking. It supports
-    configuration options for controlling logging behavior and can be disabled for
-    specific endpoints.
-
-    Attributes:
-        app: FastAPI application instance
-        config: Configuration dictionary with logging options
+    cycles, including timing, status codes, and error tracking.
     """
 
     config_class = RequestLoggingConfig
@@ -81,7 +75,7 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
         settings = get_settings()
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
 
-        # Clean logging for files
+        # Bind structured log context
         request_logger = self._logger.bind(
             request_id=request_id,
             method=request.method,
@@ -91,6 +85,7 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
             user_agent=request.headers.get("user-agent"),
         )
 
+        # Ensure JSON format for structured logs in files
         if settings.LOG_FORMAT == "json":
             request_logger = structlog.get_logger(__name__).bind(json=True)
 
@@ -127,13 +122,6 @@ class RequestLoggingMiddleware(BaseMiddleware[RequestLoggingConfig]):
     ) -> Response:
         """
         Dispatch method required by BaseHTTPMiddleware.
-
-        Args:
-            request: The incoming HTTP request.
-            call_next: The next middleware or endpoint in the chain.
-
-        Returns:
-            Response: The HTTP response.
         """
         if request.url.path in self.config.skip_paths:
             return await call_next(request)
@@ -164,9 +152,6 @@ def setup_logging_middleware(app: FastAPI) -> None:
     This function initializes and registers the logging middleware with the
     application's middleware registry. It respects application settings for
     enabling/disabling request logging.
-
-    Args:
-        app: FastAPI application instance
     """
     settings = get_settings()
     registry = MiddlewareRegistry()

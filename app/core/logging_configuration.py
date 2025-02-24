@@ -42,6 +42,9 @@ def configure_stdlib_logging() -> None:
     Raises:
         OSError: If log directory creation fails
     """
+    log_path = Path(settings.LOG_PATH)
+    log_path.mkdir(parents=True, exist_ok=True)  # Ensure log directory exists
+
     log_config = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -63,13 +66,13 @@ def configure_stdlib_logging() -> None:
                 "show_level": True,
                 "rich_tracebacks": True,
                 "tracebacks_show_locals": True,
-                "level": settings.LOG_LEVEL,
                 "markup": False,  # Prevent ANSI escape codes in logs
+                "level": settings.LOG_LEVEL,
             },
             "file": {
                 "class": "logging.FileHandler",
-                "formatter": "standard",  # Ensure log files are clean
-                "filename": f"{settings.LOG_PATH}/app.log",
+                "formatter": "json" if settings.LOG_FORMAT == "json" else "standard",
+                "filename": log_path / "app.log",
                 "encoding": "utf-8",
                 "level": settings.LOG_LEVEL,
             },
@@ -81,9 +84,6 @@ def configure_stdlib_logging() -> None:
             },
         },
     }
-
-    # Ensure log directory exists
-    Path(settings.LOG_PATH).mkdir(parents=True, exist_ok=True)
 
     # Apply configuration
     logging.config.dictConfig(log_config)
