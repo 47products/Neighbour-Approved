@@ -51,7 +51,7 @@ def test_sessionlocal_is_callable():
     session.close()
 
 
-@patch("app.db.database_configuration.create_engine")
+@patch("app.db.database_engine.create_engine")
 def test_get_engine(mock_create_engine):
     """
     Test that get_engine() returns the global engine, and doesn't re-create it if it exists.
@@ -72,7 +72,7 @@ def test_create_session():
     db_session.close()
 
 
-@patch("app.db.database_configuration.create_session")
+@patch("app.db.database_engine.create_session")
 def test_verify_database_connection_success(mock_create_session):
     """
     Test verify_database_connection() returns True when query executes successfully.
@@ -102,7 +102,7 @@ def test_verify_database_connection_success(mock_create_session):
     # or depends on your code if 'close()' is also expected
 
 
-@patch("app.db.database_configuration.create_session")
+@patch("app.db.database_engine.create_session")
 def test_verify_database_connection_failure(mock_create_session):
     mock_session = MagicMock()
     # Make the session behave like a context manager
@@ -121,7 +121,7 @@ def test_verify_database_connection_failure(mock_create_session):
     mock_session.execute.assert_called_once_with("SELECT 1")
 
 
-@patch("app.db.database_configuration.create_session")
+@patch("app.db.database_engine.create_session")
 def test_verify_database_connection_unexpected_error(mock_create_session):
     """
     Test that verify_database_connection re-raises non-SQLAlchemyError exceptions.
@@ -149,8 +149,8 @@ def test_verify_database_connection_unexpected_error(mock_create_session):
     mock_session.execute.assert_called_once_with("SELECT 1")
 
 
-@patch("app.db.database_configuration.create_session")
-@patch("app.db.database_configuration.Base.metadata.create_all")
+@patch("app.db.database_engine.create_session")
+@patch("app.db.database_engine.Base.metadata.create_all")
 def test_init_database(mock_create_all, mock_create_session):
     """
     Test that init_database() calls Base.metadata.create_all with the global engine.
