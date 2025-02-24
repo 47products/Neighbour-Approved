@@ -1,7 +1,7 @@
 """Association tables for model relationships."""
 
 from sqlalchemy import Table, Column, Integer, ForeignKey
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 
 CONTACTS_ID = "contacts.id"
 COMMUNITIES_ID = "communities.id"

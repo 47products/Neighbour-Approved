@@ -24,7 +24,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from app.db.database_configuration import (
+from app.db.database_engine import (
     engine,
     SessionLocal,
     get_engine,
@@ -89,7 +89,7 @@ def test_verify_database_connection_success(mock_create_session):
     mock_session.execute.return_value = None
 
     # 4) Call verify_database_connection(), expecting success
-    from app.db.database_configuration import verify_database_connection
+    from app.db.database_engine import verify_database_connection
 
     assert verify_database_connection() is True
 
@@ -114,7 +114,7 @@ def test_verify_database_connection_failure(mock_create_session):
 
     mock_session.execute.side_effect = SQLAlchemyError("DB error")
 
-    from app.db.database_configuration import verify_database_connection
+    from app.db.database_engine import verify_database_connection
 
     assert verify_database_connection() is False
 
@@ -137,7 +137,7 @@ def test_verify_database_connection_unexpected_error(mock_create_session):
     # Side effect is a non-SQLAlchemyError => triggers 'raise e' path
     mock_session.execute.side_effect = ValueError("Non-SQL error")
 
-    from app.db.database_configuration import verify_database_connection
+    from app.db.database_engine import verify_database_connection
 
     # We expect it to bubble up as a ValueError, not return True/False
     with pytest.raises(ValueError, match="Non-SQL error"):
@@ -170,7 +170,7 @@ def test_set_postgres_timezone(mocker):
     """
     # We'll import the event function from the module,
     # then manually call it with a mock dbapi_connection
-    from app.db.database_configuration import set_postgres_timezone
+    from app.db.database_engine import set_postgres_timezone
 
     mock_connection = MagicMock()
     mock_cursor = MagicMock()
@@ -188,7 +188,7 @@ def test_set_search_path(mocker):
     """
     Test the 'set_search_path' event listener by simulating an Engine-level event.
     """
-    from app.db.database_configuration import set_search_path
+    from app.db.database_engine import set_search_path
 
     mock_connection = MagicMock()
     mock_cursor = MagicMock()
