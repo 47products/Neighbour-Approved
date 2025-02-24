@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from sqlalchemy import ForeignKey, Integer, Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.db.models.base_mixins import (
     TimestampMixin,
     ActiveMixin,

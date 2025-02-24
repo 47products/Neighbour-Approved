@@ -18,7 +18,7 @@ Dependencies:
 
 import pytest
 from pydantic import ValidationError
-from app.db.config import DatabaseSettings, SecretStr
+from app.db.database_settings import DatabaseSettings, SecretStr
 
 
 def test_database_settings_valid():

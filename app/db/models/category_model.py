@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, List, Optional
 from sqlalchemy import Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column, declared_attr
 
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.db.models.association_tables import contact_categories
 from app.db.models.base_mixins import (
     TimestampMixin,

@@ -24,7 +24,7 @@ from app.db.errors import (
     TransactionError,
 )
 from app.db.repositories.repository_interface import IRepository
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.core.error_handling import (
     DatabaseError,
     RecordNotFoundError,
