@@ -8,7 +8,7 @@ health status.
 from fastapi import APIRouter
 from app.api.v1.schemas.health_schema import HealthResponse
 
-router = APIRouter(tags=["Health"], responses={404: {"description": "Not Found"}})
+router = APIRouter(tags=["System"], responses={404: {"description": "Not Found"}})
 
 
 @router.get("/", response_model=HealthResponse, summary="Health Check Endpoint")

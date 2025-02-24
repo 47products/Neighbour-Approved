@@ -21,15 +21,15 @@ api_router = APIRouter(
 # Include the `info` router with its specific prefix and tag
 api_router.include_router(
     info_endpoint.router,
-    prefix="/info",
-    tags=["Info"],
+    prefix="/system/info",
+    tags=["System"],
     responses={404: {"description": "Info Not Found"}},
 )
 
 # Include the `health` router without an additional prefix
 api_router.include_router(
     health_check_endpoint.router,
-    prefix="/health",
-    tags=["Health"],
+    prefix="/system/health",
+    tags=["System"],
     responses={404: {"description": "Health Endpoint Not Found"}},
 )
