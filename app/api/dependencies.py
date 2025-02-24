@@ -18,7 +18,7 @@ from app.services.user_service import UserService
 from app.services.community_service import CommunityService
 from app.services.contact_service import ContactService
 from app.services.endorsement_service import EndorsementService
-from app.db.database_configuration import create_session
+from app.db.database_engine import create_session
 from app.db.repositories.user_repository import UserRepository
 from app.db.repositories.community_repository import CommunityRepository
 from app.db.repositories.contact_repository import ContactRepository

@@ -10,7 +10,7 @@ The module also exports common database components like the Base class and
 custom types, making them easily accessible to other parts of the application.
 """
 
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.db.database_types import TZDateTime
 from app.db.models.user_model import User
 from app.db.models.role_model import Role

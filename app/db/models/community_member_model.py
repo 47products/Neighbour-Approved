@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy import Boolean, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.db.database_types import TZDateTime
 from app.db.models.base_mixins import TimestampMixin
 

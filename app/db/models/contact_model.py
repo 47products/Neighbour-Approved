@@ -9,7 +9,7 @@ from sqlalchemy import Float, Index, Integer, String, ForeignKey, text
 from sqlalchemy.orm import Mapped, relationship, mapped_column
 from sqlalchemy.ext.hybrid import hybrid_property
 
-from app.db.database_configuration import Base
+from app.db.database_engine import Base
 from app.db.database_types import create_email_check_constraint
 from app.db.database_utils import (
     EMAIL_LENGTH,
