@@ -31,7 +31,12 @@ from app.core.middleware_management import (
 
 
 # A concrete subclass of BaseMiddleware for testing
-class TestMiddleware(BaseMiddleware[MiddlewareConfig]):
+# Fix: Remove explicit __init__ and use BaseMiddleware's constructor
+class MiddlewareUnderTest(BaseMiddleware[MiddlewareConfig]):
+    """
+    Concrete implementation of BaseMiddleware for testing.
+    """
+
     async def process(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
@@ -70,7 +75,7 @@ async def test_base_middleware_init():
     Test that BaseMiddleware __init__ sets config, dependencies, and logs a bound logger.
     """
     config = {"enabled": True, "log_level": "DEBUG", "skip_paths": ["/health"]}
-    middleware = TestMiddleware(app=None, config=config, dependencies=[])
+    middleware = MiddlewareUnderTest(app=None, config=config, dependencies=[])
     assert middleware.config.enabled is True
     assert middleware.config.log_level == "DEBUG"
     assert middleware.config.skip_paths == ["/health"]
@@ -84,7 +89,7 @@ async def test_base_middleware_startup_shutdown(caplog):
     Test startup() and shutdown() log messages.
     """
     caplog.set_level("DEBUG", logger="app.core.middleware_management")
-    middleware = TestMiddleware(app=None)
+    middleware = MiddlewareUnderTest(app=None)
     await middleware.startup()
     await middleware.shutdown()
 
@@ -121,7 +126,7 @@ async def test_base_middleware_execute_pipeline_no_more_middlewares(
     Test execute_pipeline scenario where pipeline_position == len(middleware_chain).
     We expect it to just call call_next(request).
     """
-    middleware = TestMiddleware(app=None)
+    middleware = MiddlewareUnderTest(app=None)
     # pipeline_position = 0, but middleware_chain is empty => 0 == 0 => call call_next
     response = await middleware.execute_pipeline(request_mock, call_next_mock, 0, [])
     assert response.status_code == 200
@@ -136,8 +141,8 @@ async def test_base_middleware_execute_pipeline_with_next_middleware(
     and logs the execution time. We'll use 'TestMiddleware' for the next link too.
     """
     caplog.set_level("DEBUG", logger="app.core.middleware_management")
-    first_mw = TestMiddleware(app=None)
-    second_mw = TestMiddleware(app=None)
+    first_mw = MiddlewareUnderTest(app=None)
+    second_mw = MiddlewareUnderTest(app=None)
     mw_chain = [
         second_mw
     ]  # We'll run first_mw's execute_pipeline => next_mw = second_mw
@@ -169,7 +174,7 @@ async def test_base_middleware_execute_pipeline_error_in_process(
     Test that if the next middleware process raises an exception,
     it's logged as 'middleware_execution_failed' and re-raised.
     """
-    first_mw = TestMiddleware(app=None)
+    first_mw = MiddlewareUnderTest(app=None)
 
     class FailingMiddleware(BaseMiddleware[MiddlewareConfig]):
         async def process(self, req, next_):
@@ -193,7 +198,7 @@ async def test_base_middleware_execute_pipeline_error_caught_outside(
     it logs 'pipeline_execution_failed'.
     We'll force an error after the 'if pipeline_position == len(middleware_chain)' line.
     """
-    mw = TestMiddleware(app=None)
+    mw = MiddlewareUnderTest(app=None)
     # We'll create a scenario: pipeline_position is 0, but we pass negative len(...), forcing an error?
     # Or we can directly patch the code to raise an exception in the outer try block.
     # We'll do a simpler approach: monkeypatch the 'process' method to raise at the outer level.
@@ -221,11 +226,13 @@ def test_middleware_registry_register():
     """
     registry = MiddlewareRegistry()
     config = {"enabled": False}
-    registry.register(TestMiddleware, priority=MiddlewarePriority.FIRST, config=config)
+    registry.register(
+        MiddlewareUnderTest, priority=MiddlewarePriority.FIRST, config=config
+    )
 
     # Register again => ValueError
     with pytest.raises(ValueError, match="already registered"):
-        registry.register(TestMiddleware, priority=MiddlewarePriority.NORMAL)
+        registry.register(MiddlewareUnderTest, priority=MiddlewarePriority.NORMAL)
 
 
 def test_middleware_registry_get_ordered_middlewares(caplog):
@@ -234,10 +241,10 @@ def test_middleware_registry_get_ordered_middlewares(caplog):
     """
     registry = MiddlewareRegistry()
 
-    class AMiddleware(TestMiddleware):
+    class AMiddleware(MiddlewareUnderTest):
         pass
 
-    class BMiddleware(TestMiddleware):
+    class BMiddleware(MiddlewareUnderTest):
         pass
 
     registry.register(BMiddleware, priority=MiddlewarePriority.NORMAL)
@@ -258,7 +265,7 @@ async def test_middleware_registry_startup_middlewares(caplog):
     registry = MiddlewareRegistry()
     reg_config = {"log_level": "DEBUG"}
 
-    class StartupMiddleware(TestMiddleware):
+    class StartupMiddleware(MiddlewareUnderTest):
         pass
 
     registry.register(StartupMiddleware, config=reg_config)
@@ -281,10 +288,10 @@ async def test_middleware_registry_shutdown_middlewares(caplog):
     """
     registry = MiddlewareRegistry()
 
-    class M1(TestMiddleware):
+    class M1(MiddlewareUnderTest):
         pass
 
-    class M2(TestMiddleware):
+    class M2(MiddlewareUnderTest):
         pass
 
     registry.register(M1, priority=MiddlewarePriority.FIRST)
@@ -329,7 +336,7 @@ async def test_middleware_registry_execute_middleware_chain_single_mw(
     """
     caplog.set_level("DEBUG", logger="app.core.middleware_management")
     registry = MiddlewareRegistry()
-    registry.register(TestMiddleware)
+    registry.register(MiddlewareUnderTest)
 
     request_mock = MagicMock(spec=Request)
     response = await registry.execute_middleware_chain(request_mock, call_next_mock)
