@@ -16,7 +16,7 @@ Typical usage example:
 
 import pytest
 from unittest.mock import MagicMock
-from app.services.contact_service.contact_service_service import ContactServiceService
+from app.services.contact_service.service import ContactServiceService
 from app.services.service_exceptions import (
     ResourceNotFoundError,
     BusinessRuleViolationError,

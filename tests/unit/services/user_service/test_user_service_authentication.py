@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 from app.core.error_handling import AuthenticationError
 from app.services.service_exceptions import ValidationError
 from app.db.models.user_model import User
-from app.services.user_service.user_service_authentication import AuthenticationService
+from app.services.user_service.authentication import AuthenticationService
 
 
 @pytest.mark.asyncio

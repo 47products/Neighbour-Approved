@@ -19,8 +19,8 @@ from app.core.error_handling import AuthenticationError
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
 from app.services.service_exceptions import ValidationError
-from app.services.user_service.user_service_base_user import BaseUserService
-from app.services.user_service.user_service_security import SecurityService
+from app.services.user_service.base_user import BaseUserService
+from app.services.user_service.security import SecurityService
 
 
 class AuthenticationService(BaseUserService):

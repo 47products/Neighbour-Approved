@@ -29,7 +29,7 @@ Dependencies:
 
 import bcrypt
 import pytest
-from app.services.user_service.user_service_security import SecurityService
+from app.services.user_service.security import SecurityService
 from app.services.service_exceptions import ValidationError
 
 
@@ -124,7 +124,7 @@ def test_verify_password_exception(monkeypatch):
         raise RuntimeError("Simulated error")
 
     monkeypatch.setattr(
-        "app.services.user_service.user_service_security.bcrypt.checkpw", fake_checkpw
+        "app.services.user_service.security.bcrypt.checkpw", fake_checkpw
     )
     result = service.verify_password("fakehash", "anyPassword")
     assert result is False

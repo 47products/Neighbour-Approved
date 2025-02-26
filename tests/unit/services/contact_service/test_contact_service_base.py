@@ -13,7 +13,7 @@ Fixtures required:
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from app.services.contact_service.contact_service_base import ContactService
+from app.services.contact_service.base import ContactService
 from app.db.models.contact_model import Contact
 from app.services.service_exceptions import ResourceNotFoundError
 

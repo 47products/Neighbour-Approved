@@ -23,7 +23,7 @@ Dependencies:
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
-from app.services.user_service.user_service_email_verification import (
+from app.services.user_service.email_verification import (
     EmailVerificationService,
 )
 from app.services.service_exceptions import BusinessRuleViolationError, ValidationError

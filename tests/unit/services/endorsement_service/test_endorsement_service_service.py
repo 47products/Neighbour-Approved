@@ -22,7 +22,7 @@ from app.services.service_exceptions import (
     StateError,
 )
 from app.api.v1.schemas.contact_endorsement_schema import ContactEndorsementCreate
-from app.services.endorsement_service.endorsement_service import EndorsementService
+from app.services.endorsement_service.service import EndorsementService
 
 # --- Dummy model classes for testing ---
 
