@@ -15,8 +15,7 @@ env_path = Path(__file__).parents[2] / ".env"
 load_dotenv(env_path)
 
 from app.db.database_engine import Base
-from app.db.database_settings import Settings
-from app.db import models
+from app.core.config import Settings
 
 # Load the Alembic configuration
 config = context.config

@@ -1,3 +1,4 @@
+# pylint: disable=unused-import
 """
 Database configuration and engine setup module.
 
@@ -59,6 +60,18 @@ SessionLocal = sessionmaker(
 
 # Create declarative base for models
 Base = declarative_base()
+
+# Import all models so they are registered in Base.metadata.
+from app.db.models import (
+    category_model,
+    community_member_model,
+    community_model,
+    contact_endorsement_model,
+    contact_model,
+    role_model,
+    service_model,
+    user_model,
+)
 
 
 @event.listens_for(Engine, "connect")
