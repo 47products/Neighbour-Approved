@@ -11,7 +11,8 @@ additional routers can be included following the established pattern.
 """
 
 from fastapi import APIRouter
-from app.api.v1.endpoints import health_check_endpoint, info_endpoint
+from app.api.v1.endpoints.system import info_endpoint
+from app.api.v1.endpoints.system import health_check_endpoint
 
 # Initialize the main API router without a prefix
 api_router = APIRouter(

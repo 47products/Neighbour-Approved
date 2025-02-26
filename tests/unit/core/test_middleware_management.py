@@ -21,7 +21,6 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI, Request, Response
 from starlette.responses import Response as StarletteResponse
 from starlette.middleware.base import RequestResponseEndpoint
-from typing import Any, Dict
 
 from app.core.middleware_management import (
     MiddlewarePriority,

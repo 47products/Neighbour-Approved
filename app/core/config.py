@@ -33,21 +33,26 @@ class Settings(BaseSettings):
     validation and secure handling of environment variables and settings.
 
     Attributes:
-        APPLICATION_NAME: Name of the application
-        ENVIRONMENT: Deployment environment (development, staging, production)
-        DEBUG: Debug mode flag
-        API_PREFIX: Prefix for all API endpoints
-        CORS_ORIGINS: Allowed CORS origins
-        LOG_LEVEL: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        LOG_FORMAT: Log format (json or standard)
-        LOG_PATH: Path to log files directory
-        ENABLE_REQUEST_LOGGING: Whether to log HTTP requests
-        ENABLE_SQL_LOGGING: Whether to log SQL queries
-        POSTGRES_USER: Database username
-        POSTGRES_PASSWORD: Database password (stored securely)
-        POSTGRES_HOST: Database host address
-        POSTGRES_PORT: Database port number
-        POSTGRES_DB: Database name
+        APPLICATION_NAME: Name of the application.
+        ENVIRONMENT: Deployment environment (development, staging, production).
+        DEBUG: Debug mode flag.
+        API_PREFIX: Prefix for all API endpoints.
+        CORS_ORIGINS: Allowed CORS origins.
+        LOG_LEVEL: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+        LOG_FORMAT: Log format (json or standard).
+        LOG_PATH: Path to log files directory.
+        ENABLE_REQUEST_LOGGING: Whether to log HTTP requests.
+        ENABLE_SQL_LOGGING: Whether to log SQL queries.
+        ENABLE_SQL_ECHO: Enable SQL query logging for debugging purposes.
+        SECRET_KEY: JWT secret key for signing tokens.
+        ALGORITHM: JWT signing algorithm.
+        ACCESS_TOKEN_EXPIRE_MINUTES: Access token expiration time in minutes.
+        REFRESH_TOKEN_EXPIRE_MINUTES: Refresh token expiration time in minutes.
+        POSTGRES_USER: Database username.
+        POSTGRES_PASSWORD: Database password (stored securely).
+        POSTGRES_HOST: Database host address.
+        POSTGRES_PORT: Database port number.
+        POSTGRES_DB: Database name.
     """
 
     APPLICATION_NAME: str = Field(
@@ -91,7 +96,16 @@ class Settings(BaseSettings):
         description="Enable SQL query logging",
     )
     ENABLE_SQL_ECHO: bool = Field(
-        default=False, description="Enable SQL query logging for debugging purposes"
+        False, description="Enable SQL query logging for debugging purposes"
+    )
+    # Additional settings for authentication
+    SECRET_KEY: SecretStr = Field(..., description="JWT secret key for signing tokens")
+    ALGORITHM: str = Field("HS256", description="JWT signing algorithm")
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        30, description="Access token expiration time in minutes"
+    )
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = Field(
+        1440, description="Refresh token expiration time in minutes"
     )
 
     model_config = {
@@ -113,7 +127,7 @@ class Settings(BaseSettings):
         Construct the database URL from individual settings.
 
         Returns:
-            PostgresDsn: Validated database URL for SQLAlchemy
+            PostgresDsn: Validated database URL for SQLAlchemy.
         """
         return PostgresDsn(
             f"postgresql://{self.POSTGRES_USER}:"
@@ -131,10 +145,10 @@ class Settings(BaseSettings):
         specified environment.
 
         Returns:
-            Settings: The validated settings instance
+            Settings: The validated settings instance.
 
         Raises:
-            ValueError: If environment validation fails
+            ValueError: If environment validation fails.
         """
         allowed_environments = {"development", "staging", "production"}
         if self.ENVIRONMENT.lower() not in allowed_environments:
@@ -151,10 +165,10 @@ class Settings(BaseSettings):
         Ensures that logging configuration values are valid and compatible.
 
         Returns:
-            Settings: The validated settings instance
+            Settings: The validated settings instance.
 
         Raises:
-            ValueError: If logging settings are invalid
+            ValueError: If logging settings are invalid.
         """
         allowed_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
         if self.LOG_LEVEL.upper() not in allowed_levels:
@@ -178,7 +192,7 @@ def get_settings() -> Settings:
     accessed.
 
     Returns:
-        Settings: Cached settings instance
+        Settings: Cached settings instance.
 
     Example:
         settings = get_settings()
