@@ -13,7 +13,7 @@ Typical usage example:
     pytest tests/unit/test_contact_service_constants.py
 """
 
-from app.services.contact_service.contact_service_constants import (
+from app.services.contact_service.constants import (
     MAX_CONTACTS_FREE,
     MAX_SERVICES,
     MAX_CATEGORIES,

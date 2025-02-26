@@ -20,10 +20,10 @@ Dependencies:
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.services.community_service.community_service_constants import (
+from app.services.community_service.constants import (
     PRIVACY_TRANSITION_RULES,
 )
-from app.services.community_service.community_service_privacy import (
+from app.services.community_service.privacy import (
     CommunityPrivacyService,
 )
 from app.services.service_exceptions import (

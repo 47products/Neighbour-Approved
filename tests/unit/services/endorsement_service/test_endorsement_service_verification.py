@@ -21,7 +21,7 @@ from typing import Dict, Any, Optional
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.endorsement_service.endorsement_service_verification import (
+from app.services.endorsement_service.verification import (
     VerificationMixin,
 )
 from app.services.service_exceptions import (

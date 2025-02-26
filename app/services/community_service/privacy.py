@@ -20,7 +20,7 @@ Typical usage example:
 from sqlalchemy.orm import Session
 from app.db.models.community_model import Community, PrivacyLevel
 from app.db.repositories.community_repository import CommunityRepository
-from app.services.community_service.community_service_constants import (
+from app.services.community_service.constants import (
     PRIVACY_TRANSITION_RULES,
 )
 from app.services.service_exceptions import (

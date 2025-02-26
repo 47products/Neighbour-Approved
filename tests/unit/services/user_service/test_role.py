@@ -26,7 +26,7 @@ Dependencies:
 
 import pytest
 from unittest.mock import AsyncMock
-from app.services.user_service.user_service_role import RoleService
+from app.services.user_service.role import RoleService
 from app.services.service_exceptions import (
     ResourceNotFoundError,
     BusinessRuleViolationError,

@@ -18,7 +18,7 @@ from app.services.service_exceptions import (
     BusinessRuleViolationError,
     ValidationError,
 )
-from app.services.user_service.user_service_base_user import BaseUserService
+from app.services.user_service.base_user import BaseUserService
 
 
 class EmailVerificationService(BaseUserService):

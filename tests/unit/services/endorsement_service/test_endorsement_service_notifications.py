@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
-from app.services.endorsement_service.endorsement_service_notifications import (
+from app.services.endorsement_service.notifications import (
     NotificationMixin,
 )
 from app.services.notification_service import NotificationType

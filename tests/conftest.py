@@ -32,23 +32,23 @@ from app.db.models.contact_model import Contact
 from app.db.models.service_model import Service
 from app.db.repositories.community_repository import CommunityRepository
 from app.main import app
-from app.services.community_service.community_service_base import CommunityService
-from app.services.community_service.community_service_membership import (
+from app.services.community_service.base import CommunityService
+from app.services.community_service.membership import (
     CommunityMembershipService,
 )
-from app.services.contact_service.contact_service_base import ContactService
-from app.services.contact_service.contact_service_category import ContactServiceCategory
-from app.services.contact_service.contact_service_endorsement import (
+from app.services.contact_service.base import ContactService
+from app.services.contact_service.category import ContactServiceCategory
+from app.services.contact_service.endorsement import (
     ContactServiceEndorsement,
 )
-from app.services.contact_service.contact_service_service import ContactServiceService
-from app.services.contact_service.contact_service_validation import (
+from app.services.contact_service.service import ContactServiceService
+from app.services.contact_service.validation import (
     ContactServiceValidation,
 )
-from app.services.contact_service.contact_service_verification import (
+from app.services.contact_service.verification import (
     ContactServiceVerification,
 )
-from app.services.user_service.user_service_base_user import BaseUserService
+from app.services.user_service.base_user import BaseUserService
 from app.db.models.user_model import User
 from app.db.repositories.user_repository import UserRepository
 
@@ -253,7 +253,7 @@ def contact_service(dummy_db, mock_contact_repository):
     """
     Create an instance of ContactService with mocked dependencies.
     """
-    from app.services.contact_service.contact_service_base import ContactService
+    from app.services.contact_service.base import ContactService
 
     service = ContactService(db=dummy_db)
     service._repository = mock_contact_repository
@@ -265,7 +265,7 @@ def contact_service_category(dummy_db, mock_contact_repository):
     """
     Create an instance of ContactServiceCategory with mocked dependencies.
     """
-    from app.services.contact_service.contact_service_category import (
+    from app.services.contact_service.category import (
         ContactServiceCategory,
     )
 
@@ -285,7 +285,7 @@ def contact_service_endorsement(mock_db):
     """
     Create an instance of ContactServiceEndorsement with a mocked database session.
     """
-    from app.services.contact_service.contact_service_endorsement import (
+    from app.services.contact_service.endorsement import (
         ContactServiceEndorsement,
     )
 
@@ -314,7 +314,7 @@ def contact_service_service(dummy_db, mock_contact_repository, mock_service_repo
     """
     Create an instance of ContactServiceService with mocked dependencies.
     """
-    from app.services.contact_service.contact_service_service import (
+    from app.services.contact_service.service import (
         ContactServiceService,
     )
 
@@ -329,7 +329,7 @@ def contact_service_validation(dummy_db):
     """
     Create an instance of ContactServiceValidation with a mocked database session.
     """
-    from app.services.contact_service.contact_service_validation import (
+    from app.services.contact_service.validation import (
         ContactServiceValidation,
     )
 
@@ -341,7 +341,7 @@ def contact_service_verification(dummy_db):
     """
     Create an instance of ContactServiceVerification with a mocked database session.
     """
-    from app.services.contact_service.contact_service_verification import (
+    from app.services.contact_service.verification import (
         ContactServiceVerification,
     )
 
