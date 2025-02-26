@@ -17,5 +17,6 @@
     "sonarlint.connectedMode.project": {
         "connectionId": "http://localhost:9000",
         "projectKey": "Neighbour-Approved"
-    }
+    },
+    "postman.settings.dotenv-detection-notification-visibility": false
 }

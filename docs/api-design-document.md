@@ -36,7 +36,7 @@ The API follows these key design principles:
 
 All API endpoints will be prefixed with:
 
-```
+```text
 /api/v1/
 ```
 
@@ -44,13 +44,13 @@ All API endpoints will be prefixed with:
 
 The API uses JWT-based authentication. Clients must include a valid JWT token in the Authorization header:
 
-```
+```text
 Authorization: Bearer <token>
 ```
 
 Tokens are obtained through the authentication endpoint:
 
-```
+```text
 POST /api/v1/auth/login
 ```
 

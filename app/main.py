@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
-from app.api.v1.routers import api_router
+from app.api.routers import api_router
 from app.core.error_handling import setup_error_handlers
 from app.core.logging_configuration import setup_logging
 from app.core.logging_middleware import setup_logging_middleware
