@@ -39,6 +39,7 @@ class UserRetrievalMixin:
         try:
             query = select(self._model).where(self._model.email == email)
             result = await self.db.execute(query)
+            # Process the result immediately; don't return the result object
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             self._logger.error("get_by_email_failed", email=email, error=str(e))

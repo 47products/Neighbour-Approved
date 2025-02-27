@@ -11,6 +11,7 @@ additional routers can be included following the established pattern.
 """
 
 from fastapi import APIRouter
+from app.api.v1.endpoints.authentication import login_endpoint
 from app.api.v1.endpoints.system import info_endpoint
 from app.api.v1.endpoints.system import health_check_endpoint
 
@@ -33,4 +34,18 @@ api_router.include_router(
     prefix="/system/health",
     tags=["System"],
     responses={404: {"description": "Health Endpoint Not Found"}},
+)
+
+# Include the `login` router without an additional prefix
+api_router.include_router(
+    login_endpoint.router,
+    prefix="/authentication",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "User authenticated successfully and access token returned."
+        },
+        404: {"description": "Login Endpoint Not Found"},
+        401: {"description": "Invalid credentials or authentication failure."},
+    },
 )

@@ -27,6 +27,7 @@ console = Console(force_terminal=True)
 install_rich_traceback(show_locals=True)
 
 
+# In configure_stdlib_logging() function
 def configure_stdlib_logging() -> None:
     """Configure standard library logging to work with structlog and Rich.
 
@@ -34,9 +35,9 @@ def configure_stdlib_logging() -> None:
     file rotation, and separate handlers for console and file output.
 
     The configuration includes:
-        - Console output using Rich for enhanced visualization
-        - Daily rotating file logs
-        - Separate error log file
+        - Plain text console output for better readability
+        - Daily rotating file logs that roll over at midnight
+        - Separate error log file for ERROR level and above
         - SQL query logging based on settings
 
     Raises:
@@ -53,33 +54,35 @@ def configure_stdlib_logging() -> None:
                 "format": "%(asctime)s [%(levelname)s] %(message)s (%(name)s:%(lineno)d)",
                 "datefmt": "%Y-%m-%d %H:%M:%S",
             },
-            "json": {
-                "()": "pythonjsonlogger.json.JsonFormatter",
-                "format": "%(asctime)s %(levelname)s %(message)s %(name)s %(lineno)d",
-            },
         },
         "handlers": {
             "console": {
-                "class": "rich.logging.RichHandler",
+                "class": "logging.StreamHandler",
                 "formatter": "standard",
-                "show_time": True,
-                "show_level": True,
-                "rich_tracebacks": True,
-                "tracebacks_show_locals": True,
-                "markup": False,  # Prevent ANSI escape codes in logs
                 "level": settings.LOG_LEVEL,
             },
             "file": {
-                "class": "logging.FileHandler",
-                "formatter": "json" if settings.LOG_FORMAT == "json" else "standard",
+                "class": "logging.handlers.TimedRotatingFileHandler",
+                "formatter": "standard",
                 "filename": log_path / "app.log",
                 "encoding": "utf-8",
                 "level": settings.LOG_LEVEL,
+                "when": "midnight",
+                "backupCount": 30,
+            },
+            "error_file": {
+                "class": "logging.handlers.TimedRotatingFileHandler",
+                "formatter": "standard",
+                "filename": log_path / "error.log",
+                "encoding": "utf-8",
+                "level": "ERROR",
+                "when": "midnight",
+                "backupCount": 30,
             },
         },
         "loggers": {
             "": {
-                "handlers": ["console", "file"],
+                "handlers": ["console", "file", "error_file"],
                 "level": settings.LOG_LEVEL,
             },
         },
@@ -90,7 +93,7 @@ def configure_stdlib_logging() -> None:
 
 
 def setup_structlog() -> None:
-    """Configure structlog with enhanced processors and Rich integration."""
+    """Configure structlog with standard processors for plain text output."""
     timestamper = structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S")
 
     shared_processors = [
@@ -103,14 +106,8 @@ def setup_structlog() -> None:
         structlog.processors.UnicodeDecoder(),
     ]
 
-    if settings.ENVIRONMENT == "development":
-        # Enable colors only for console
-        processors = shared_processors + [structlog.dev.ConsoleRenderer(colors=True)]
-    else:
-        # Remove ANSI colors in production logs
-        processors = shared_processors + [
-            structlog.processors.JSONRenderer()  # Logs as clean JSON
-        ]
+    # Use plain text renderer for all environments
+    processors = shared_processors + [structlog.dev.ConsoleRenderer(colors=False)]
 
     structlog.configure(
         processors=processors,

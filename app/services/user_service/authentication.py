@@ -12,6 +12,7 @@ Classes:
 from typing import Optional, Tuple, cast
 from datetime import UTC, datetime, timedelta
 from pydantic import EmailStr
+from sqlalchemy import ChunkedIteratorResult
 from sqlalchemy.exc import SQLAlchemyError
 import structlog
 
@@ -74,11 +75,10 @@ class AuthenticationService(BaseUserService):
                 )
                 return None
 
-            # Handle lockout check separately from other authentication logic
+            # Handle lockout check
             if user.failed_login_lockout and user.failed_login_lockout > datetime.now(
                 UTC
             ):
-                # Log before raising to maintain audit trail
                 self._logger.warning(
                     "authentication_blocked",
                     email=email,
@@ -90,6 +90,7 @@ class AuthenticationService(BaseUserService):
                     details={"lockout_until": user.failed_login_lockout},
                 )
 
+            # Verify password
             if not await self.security_service.verify_password(user.password, password):
                 await self._handle_failed_login(user)
                 self._logger.info(
@@ -152,7 +153,16 @@ class AuthenticationService(BaseUserService):
             ValidationError: If input validation fails
         """
         try:
-            user = await self.repository.get_by_email(email)
+            repository = cast(UserRepository, self.repository)
+
+            self._logger.debug(
+                "attempting_to_get_user_by_email",
+                email=email,
+                repository_type=str(type(repository)),
+            )
+            user = await repository.get_by_email(email)
+            self._logger.debug("get_user_by_email_result", user_found=user is not None)
+
             if not user:
                 raise AuthenticationError("Invalid email or password")
 
@@ -168,6 +178,7 @@ class AuthenticationService(BaseUserService):
                     details={"lockout_until": user.failed_login_lockout},
                 )
 
+            # Verify password - this is correctly awaited
             if not await self.security_service.verify_password(user.password, password):
                 await self._handle_failed_login(user)
                 raise AuthenticationError("Invalid email or password")
@@ -212,8 +223,8 @@ class AuthenticationService(BaseUserService):
 
         Implements progressive lockout policy for failed attempts:
         - First 3 failures: No lockout
-        - 4-6 failures: 15 minute lockout
-        - 7+ failures: 1 hour lockout
+        - 4-6 failures: 15-minute lockout
+        - 7+ failures: 1-hour lockout
 
         Args:
             user: User who failed to log in

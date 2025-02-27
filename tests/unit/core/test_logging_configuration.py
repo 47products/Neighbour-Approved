@@ -80,7 +80,7 @@ def test_setup_structlog_dev(mocker):
 @patch("app.core.logging_configuration.settings.ENVIRONMENT", new="production")
 def test_setup_structlog_production(mocker):
     """
-    If ENVIRONMENT=production, we expect a JSONRenderer as the last processor.
+    With our plain text configuration, all environments now use ConsoleRenderer.
     """
     configure_mock = mocker.patch("structlog.configure")
 
@@ -88,9 +88,9 @@ def test_setup_structlog_production(mocker):
 
     _, kwargs = configure_mock.call_args
     processors = kwargs["processors"]
-    from structlog.processors import JSONRenderer
+    from structlog.dev import ConsoleRenderer
 
-    assert isinstance(processors[-1], JSONRenderer)
+    assert isinstance(processors[-1], ConsoleRenderer)
 
 
 def test_AppLogger_basic_methods(mocker):
@@ -181,8 +181,8 @@ def test_configure_stdlib_logging_oserror(mocker):
 @patch("app.core.logging_configuration.settings.ENVIRONMENT", new="staging")
 def test_setup_structlog_unknown_env(mocker):
     """
-    Covers lines 159->162 by testing an environment that isn't 'development' or 'production'.
-    We expect structlog to use JSONRenderer in the else-case.
+    Covers environments that aren't 'development' or 'production'.
+    We now expect ConsoleRenderer for all environments.
     """
     configure_mock = mocker.patch("structlog.configure")
 
@@ -191,5 +191,6 @@ def test_setup_structlog_unknown_env(mocker):
     configure_mock.assert_called_once()
     _, kwargs = configure_mock.call_args
     processors = kwargs["processors"]
-    # The last processor in the fallback case is a JSONRenderer
-    assert isinstance(processors[-1], JSONRenderer)
+    from structlog.dev import ConsoleRenderer
+
+    assert isinstance(processors[-1], ConsoleRenderer)

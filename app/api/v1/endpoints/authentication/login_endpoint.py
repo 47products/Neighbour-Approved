@@ -68,46 +68,9 @@ def create_access_token(subject: str, expires_delta: timedelta, settings) -> str
 async def login_endpoint(
     login_request: LoginRequest,
     db=Depends(get_db),
-    security_service: SecurityService = Depends(),  # Assumes proper DI for SecurityService
+    security_service: SecurityService = Depends(),
 ):
-    """
-    Authenticate a user and return a JWT access token.
-
-    This endpoint accepts user credentials via a LoginRequest, verifies them
-    through the AuthenticationService, and returns a JWT access token along with
-    token metadata. The token may then be used for subsequent authenticated requests.
-
-    Args:
-        login_request (LoginRequest): A Pydantic model containing:
-            - email (EmailStr): The user's email address.
-            - password (str): The user's plain-text password.
-        db: Database session dependency.
-        security_service (SecurityService): Security service for password operations.
-
-    Returns:
-        TokenResponse: A Pydantic model containing:
-            - access_token (str): The JWT access token.
-            - token_type (str): The token type, typically "bearer".
-            - expires_in (int): Token expiration time in seconds.
-
-    Raises:
-        HTTPException: If authentication fails due to invalid email or password.
-
-    Example:
-        **Request:**
-            POST /api/v1/auth/login
-            {
-                "email": "user@example.com",
-                "password": "securepassword123"
-            }
-
-        **Response:**
-            {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "token_type": "bearer",
-                "expires_in": 1800
-            }
-    """
+    """Authenticate a user and return a JWT access token."""
     settings = get_settings()
     # Instantiate the authentication service with dependencies
     auth_service = AuthenticationService(db, security_service)
