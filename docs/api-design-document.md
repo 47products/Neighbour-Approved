@@ -51,7 +51,7 @@ Authorization: Bearer <token>
 Tokens are obtained through the authentication endpoint:
 
 ```text
-POST /api/v1/auth/login
+POST /api/v1/authentication/login
 ```
 
 ### 2.3 Response Format
@@ -92,9 +92,9 @@ Error responses use a standard format:
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | /api/v1/auth/login | Authenticate user and get access token |
-| POST | /api/v1/auth/refresh | Refresh access token |
-| POST | /api/v1/auth/logout | Invalidate token |
+| POST | /api/v1/authentication/login | Authenticate user and get access token |
+| POST | /api/v1/authentication/refresh | Refresh access token |
+| POST | /api/v1/authentication/logout | Invalidate token |
 
 ### 3.2 User Endpoints
 
@@ -332,9 +332,9 @@ Follow these testing principles:
 
 ### 6.1 Authentication Endpoints
 
-- [ ] Implement POST /api/v1/auth/login
-- [ ] Implement POST /api/v1/auth/refresh
-- [ ] Implement POST /api/v1/auth/logout
+- [ ] Implement POST /api/v1/authentication/login
+- [ ] Implement POST /api/v1/authentication/refresh
+- [ ] Implement POST /api/v1/authentication/logout
 - [ ] Create authentication middleware
 - [ ] Write unit tests for authentication flows
 

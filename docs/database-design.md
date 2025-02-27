@@ -28,7 +28,7 @@ The Neighbour Approved database is designed to support a community-driven platfo
 ### Core Tables
 
 ```sql
--- Users and Authentication
+-- Users and Authentication 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,

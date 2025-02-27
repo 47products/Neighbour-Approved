@@ -1,523 +1,248 @@
-# Neighbour Approved Architectural Design Document
+# Neighbour Approved - Detailed Architectural Design (Updated with British English & Data Types)
+
+This document outlines the architectural design for the **Neighbour Approved** backend application, reflecting the requested updates and clarifications. Changes include using British English, ensuring the backend is modular, adopting an Extreme Programming (XP) approach, integrating a GitHub repository with a Notion task board, generating an initial list of tasks, and specifying data types for model attributes. The billing-related entities have been removed as requested.
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Architecture Principles](#architecture-principles)
-3. [System Components](#system-components)
-4. [Implementation Details](#implementation-details)
-5. [Security Architecture](#security-architecture)
-6. [Testing Strategy](#testing-strategy)
-7. [Deployment Strategy](#deployment-strategy)
-8. [Monitoring and Observability](#monitoring-and-observability)
+- [Neighbour Approved - Detailed Architectural Design (Updated with British English \& Data Types)](#neighbour-approved---detailed-architectural-design-updated-with-british-english--data-types)
+  - [Table of Contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [High-Level Architecture Overview](#high-level-architecture-overview)
+  - [Layered \& Modular Architecture](#layered--modular-architecture)
+    - [Presentation (API) Layer](#presentation-api-layer)
+    - [Middleware Layer](#middleware-layer)
+    - [Domain (Business) Layer](#domain-business-layer)
+    - [Data (Persistence) Layer](#data-persistence-layer)
+    - [Infrastructure Layer](#infrastructure-layer)
+  - [Domain Model \& Core Entities](#domain-model--core-entities)
+    - [**User**](#user)
+    - [**Community**](#community)
+    - [**Contact (Contractor)**](#contact-contractor)
+    - [**Endorsement**](#endorsement)
+    - [**SubscriptionPlan**](#subscriptionplan)
+    - [**Sponsorship**](#sponsorship)
+  - [Extreme Programming (XP) Approach](#extreme-programming-xp-approach)
+  - [Development Flow \& Tooling](#development-flow--tooling)
+  - [Diagrams](#diagrams)
+    - [Layered Architecture Diagram](#layered-architecture-diagram)
+    - [Request Flow Diagram](#request-flow-diagram)
+  - [Future Considerations](#future-considerations)
 
-## Overview
+---
 
-Neighbour Approved is a community-driven platform enabling users to share and endorse service providers within their communities. This document outlines the technical architecture designed to support the platform's requirements for scalability, security, and maintainability.
+## Introduction
 
-## Architecture Principles
+**Neighbour Approved** aims to provide a community-driven platform for sharing endorsed contacts (contractors) within various communities. This document describes a robust, modular backend architecture. We will adopt Extreme Programming (XP) methodologies to ensure continuous feedback, high code quality, and improved team flow. Additionally, we will integrate GitHub with a Notion task board for streamlined project management.
 
-### Core Principles
+---
 
-- **Modularity:** Independent components with clear interfaces
-- **Testability:** Comprehensive test coverage at all levels
-- **Scalability:** Horizontal scaling capabilities
-- **Maintainability:** Clear code organisation and documentation
-- **Security:** Built-in security at all layers
+## High-Level Architecture Overview
 
-### Design Patterns
+- **Technology Stack:** Python (FastAPI), PostgreSQL, SQLAlchemy, Async I/O.
+- **Security & Data Protection:** JWT-based authentication, HTTPS in production, and permission checks.
+- **Observability:** Structured logging, metrics, and tracing.
+- **Performance:** Async endpoints, caching, indexing for database queries.
+- **Scalability & Maintainability:** Clear separation of concerns, modular code structure, and XP practices to continuously refine and improve.
 
-- Repository Pattern for data access
-- Service Layer Pattern for business logic
-- Factory Pattern for object creation
-- Strategy Pattern for flexible algorithms
-- Observer Pattern for event handling
+---
 
-## System Components
+## Layered & Modular Architecture
 
-### Layer 1: API Layer
+To maintain a clean and modular codebase, we implement a layered architecture that separates concerns and facilitates independent evolution of different components.
 
-```python
-# FastAPI Application Structure
-app/
-├── api/
-│   ├── v1/
-│   │   ├── endpoints/
-│   │   │   ├── communities.py
-│   │   │   ├── contacts.py
-│   │   │   ├── endorsements.py
-│   │   │   └── users.py
-│   │   ├── schemas/
-│   │   └── dependencies.py
-│   └── middleware/
+### Presentation (API) Layer
+
+- **Responsibilities:**
+  - Expose RESTful endpoints.
+  - Validate requests and return responses.
+  - Provide OpenAPI/Swagger documentation automatically.
+- **Tools:** FastAPI, Pydantic (for schemas), HTTPX (for testing).
+
+### Middleware Layer
+
+- **Responsibilities:**
+  - Intercept requests/responses for cross-cutting concerns (authentication, rate limiting, logging, tracing).
+- **Examples:**
+  - Security middleware to verify JWT tokens.
+  - Rate limiting middleware (e.g., `slowapi`).
+  - Error handling middleware to standardise error responses.
+
+### Domain (Business) Layer
+
+- **Responsibilities:**
+  - Encapsulate business logic, rules, and workflows.
+  - Interact with data layer through repositories.
+  - Provide services (e.g., UserService, CommunityService).
+
+### Data (Persistence) Layer
+
+- **Responsibilities:**
+  - Manage database models and queries using SQLAlchemy.
+  - Handle migrations with Alembic.
+  - Provide repository classes for CRUD operations.
+- **Database:** PostgreSQL or another relational DB.
+- **Asynchronous DB Access:** Async SQLAlchemy + async drivers.
+
+### Infrastructure Layer
+
+- **Responsibilities:**
+  - Configuration management with Pydantic.
+  - Security utilities (hashing, token generation).
+  - Observability integration (logging, metrics, tracing).
+  - Utilities for caching, external API integration (future).
+- **Modularity:** Each infrastructure concern lives in its own module for easy replacement or enhancement.
+
+---
+
+## Domain Model & Core Entities
+
+Below are the updated domain entities with specified data types. All date/time fields are assumed to be timezone-aware where applicable, and `status` fields may be enums or simple strings.
+
+**Note on Status Fields:**  
+`status` fields could be `str` or `Enum` (e.g., `Status = Enum('active', 'inactive', 'suspended', 'expired')`). For this design, we will use strings initially and may refine to Enums as the domain stabilises.
+
+### **User**
+
+- `id: int`
+- `email: str`
+- `hashed_password: str`
+- `contact_number: str`
+- `first_name: str`
+- `last_name: str`
+- `roles: List[str]` (e.g., `["admin", "resident"]`)
+- `communities: List[int]` (Foreign keys referencing Community IDs)
+- `status: str` (e.g., "active", "inactive")
+
+### **Community**
+
+- `id: int`
+- `name: str`
+- `description: str`
+- `public_view_enabled: bool`
+- `subscription_plan_id: int` (Foreign key referencing SubscriptionPlan)
+- `linked_communities: List[int]` (References to other Community IDs)
+- `linked_contacts: List[int]` (References to Contact IDs)
+- `status: str` (e.g., "active", "suspended")
+
+### **Contact (Contractor)**
+
+- `id: int`
+- `community_ids: List[int]` (Many-to-many relationship to communities)
+- `name: str`
+- `email_address: str`
+- `address: str`
+- `services_offered: List[str]` (e.g., ["Plumbing", "Electrical"])
+- `phone_number: str`
+- `status: str` (e.g., "active", "verified", "disabled")
+
+### **Endorsement**
+
+- `id: int`
+- `contact_id: int` (References Contact)
+- `user_id: int` (References User)
+- `approved: bool` (True for endorsed, False otherwise)
+- `status: str` (e.g., "active", "withdrawn")
+
+### **SubscriptionPlan**
+
+- `id: int`
+- `name: str`
+- `billing_frequency: str` (e.g., "monthly", "yearly")
+- `price: float`
+- `renewal_date: datetime`
+- `expiry_date: datetime`
+- `status: str` (e.g., "active", "expired")
+
+### **Sponsorship**
+
+- `id: int`
+- `community_ids: List[int]` (Sponsorship covers multiple communities)
+- `contractor_id: int` (References Contact)
+- `level: str` (e.g., "silver", "gold", "platinum")
+- `start_date: datetime`
+- `end_date: datetime`
+- `status: str` (e.g., "active", "ended", "pending")
+
+---
+
+## Extreme Programming (XP) Approach
+
+We will adopt Extreme Programming principles to ensure:
+
+- **Continuous Integration:** Commit small changes frequently, run all tests, and keep the build green.
+- **Pair Programming:** Enhance code quality and knowledge sharing.
+- **Simple Design & Refactoring:** Start simple, improve structure continuously.
+- **Test-Driven Development (TDD):** Write tests before production code to guide design and ensure reliability.
+- **Collective Code Ownership:** Everyone owns all the code, promoting collaboration and faster improvement.
+
+**Flow is crucial:** We will limit work in progress, focus on one feature/test at a time, and ensure fast feedback loops through CI and code reviews.
+
+---
+
+## Development Flow & Tooling
+
+- **Version Control:** GitHub repository for code hosting, branching, and pull requests.
+- **Task Management:** Notion task board integrated with GitHub issues.  
+  - Each feature or bug fix is tracked as a task.
+  - Continuous refinement of the backlog.
+- **Testing:** `pytest` for tests, `pytest-asyncio` for async code, and coverage reports.
+- **Linting & Formatting:** Black, Pylint, and isort for code quality.
+- **Documentation:** Using docstrings, README files, and auto-generated API docs from FastAPI.
+
+**Process:**
+
+1. Identify a feature/test from the task board.
+2. Write a failing test (TDD).
+3. Implement code to pass the test.
+4. Refactor if necessary.
+5. Commit and push changes; CI runs tests and quality checks.
+6. If all pass, merge to main.
+
+---
+
+## Diagrams
+
+### Layered Architecture Diagram
+
+```mermaid
+flowchart TD
+A[API Layer (FastAPI)] -->|Calls Services| B[Domain/Business Layer]
+B -->|Queries/Commands| C[Data Layer (SQLAlchemy)]
+C -->|Data Access| D[(Database)]
+A -->|Configuration, Security| E[Infrastructure (Config, Security, Caching)]
+A -->|Middleware| A
+B --> E
+C --> E
 ```
 
-### Layer 2: Service Layer
-
-```python
-# Service Layer Structure
-app/
-├── services/
-│   ├── community_service.py
-│   ├── contact_service.py
-│   ├── endorsement_service.py
-│   ├── user_service.py
-│   └── interfaces/
-```
-
-### Layer 3: Data Access Layer
-
-```python
-# Repository Layer Structure
-app/
-├── repositories/
-│   ├── base.py
-│   ├── community_repository.py
-│   ├── contact_repository.py
-│   ├── endorsement_repository.py
-│   └── user_repository.py
-```
-
-### Layer 4: Domain Layer
-
-```python
-# Domain Models Structure
-app/
-├── domain/
-│   ├── models/
-│   │   ├── community.py
-│   │   ├── contact.py
-│   │   ├── endorsement.py
-│   │   └── user.py
-│   └── events/
-```
-
-## Implementation Details
-
-### API Endpoints
-
-```python
-# Example FastAPI Router Implementation
-from fastapi import APIRouter, Depends
-from app.services import ContactService
-
-router = APIRouter(prefix="/contacts")
-
-@router.get("/{contact_id}")
-async def get_contact(
-    contact_id: int,
-    service: ContactService = Depends()
-):
-    return await service.get_contact(contact_id)
-```
-
-### Service Layer
-
-```python
-# Example Service Implementation
-from app.repositories import ContactRepository
-
-class ContactService:
-    def __init__(self, repository: ContactRepository):
-        self.repository = repository
-    
-    async def get_contact(self, contact_id: int):
-        return await self.repository.get_by_id(contact_id)
-```
-
-### Repository Layer
-
-```python
-# Example Repository Implementation
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.domain.models import Contact
-
-class ContactRepository:
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def get_by_id(self, contact_id: int) -> Contact:
-        return await self.session.get(Contact, contact_id)
-```
-
-## Security Architecture
-
-### Authentication Flow
+### Request Flow Diagram
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant API
-    participant Auth
-    participant DB
-    
-    Client->>API: Login Request
-    API->>Auth: Validate Credentials
-    Auth->>DB: Check User
-    DB-->>Auth: User Data
-    Auth-->>API: JWT Token
-    API-->>Client: Token Response
+    participant API as FastAPI (API)
+    participant MW as Middleware
+    participant SVC as Services (Domain)
+    participant REPO as Repository (Data)
+    participant DB as Database
+
+    Client->>API: HTTP Request (e.g. Add Contact)
+    API->>MW: Pass request through middleware (auth, rate limiting)
+    MW->>API: Request allowed
+    API->>SVC: Call Domain Service method
+    SVC->>REPO: Data operations (CRUD)
+    REPO->>DB: Execute Query/Transaction
+    DB-->>REPO: Result
+    REPO-->>SVC: Domain Models/DTO
+    SVC-->>API: Response Data
+    API-->>Client: JSON Response
 ```
 
-### Authorisation Framework
+---
 
-```python
-# Permission System
-from enum import Enum
+## Future Considerations
 
-class Permission(str, Enum):
-    READ_COMMUNITY = "read:community"
-    WRITE_COMMUNITY = "write:community"
-    MANAGE_CONTACTS = "manage:contacts"
-    ENDORSE_CONTACTS = "endorse:contacts"
-
-# Usage in Endpoint
-@router.post("/communities")
-async def create_community(
-    data: CommunityCreate,
-    user: User = Depends(get_current_user),
-    permissions: PermissionChecker = Depends()
-):
-    permissions.check(Permission.WRITE_COMMUNITY)
-    return await community_service.create(data, user)
-```
-
-## Testing Strategy
-
-### Test Structure
-
-```python
-# Example Test Implementation
-import pytest
-from app.services import ContactService
-
-@pytest.mark.asyncio
-async def test_contact_creation():
-    # Arrange
-    service = ContactService(MockRepository())
-    data = ContactCreate(name="Test Contact")
-    
-    # Act
-    result = await service.create_contact(data)
-    
-    # Assert
-    assert result.name == "Test Contact"
-```
-
-### Testing Levels
-
-1. **Unit Tests:** Individual components
-2. **Integration Tests:** Component interactions
-3. **API Tests:** Endpoint behaviour
-4. **Performance Tests:** Load and stress testing
-
-## Deployment Strategy
-
-### Container Structure
-
-```dockerfile
-# Example Dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY app/ app/
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0"]
-```
-
-### Environment Configuration
-
-```python
-# Configuration Management
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    DATABASE_URL: str
-    JWT_SECRET: str
-    ENVIRONMENT: str = "development"
-    
-    class Config:
-        env_file = ".env"
-```
-
-## Monitoring and Observability
-
-### Logging Framework
-
-```python
-# Structured Logging Setup
-import structlog
-
-logger = structlog.get_logger()
-
-class LoggingMiddleware:
-    async def __call__(self, request, call_next):
-        logger.info(
-            "request_started",
-            path=request.url.path,
-            method=request.method
-        )
-        response = await call_next(request)
-        return response
-```
-
-### Metrics Collection
-
-```python
-# Prometheus Metrics
-from prometheus_client import Counter, Histogram
-
-http_requests_total = Counter(
-    'http_requests_total',
-    'Total HTTP requests',
-    ['method', 'endpoint']
-)
-
-request_duration_seconds = Histogram(
-    'request_duration_seconds',
-    'Request duration in seconds',
-    ['endpoint']
-)
-```
-
-### Event-Driven Architecture
-
-```python
-# Event Definitions
-from enum import Enum
-from pydantic import BaseModel
-
-class EventType(str, Enum):
-    CONTACT_ENDORSED = "contact.endorsed"
-    COMMUNITY_CREATED = "community.created"
-    USER_JOINED = "user.joined"
-
-class Event(BaseModel):
-    type: EventType
-    data: dict
-    timestamp: datetime
-    user_id: int
-
-# Event Publisher
-class EventPublisher:
-    def __init__(self):
-        self.subscribers = defaultdict(list)
-    
-    async def publish(self, event: Event):
-        for subscriber in self.subscribers[event.type]:
-            await subscriber(event)
-    
-    def subscribe(self, event_type: EventType, handler: Callable):
-        self.subscribers[event_type].append(handler)
-```
-
-### Caching Strategy
-
-```python
-# Redis Cache Implementation
-from redis import asyncio as aioredis
-
-class CacheService:
-    def __init__(self, redis: aioredis.Redis):
-        self.redis = redis
-    
-    async def get_or_set(
-        self,
-        key: str,
-        getter: Callable,
-        ttl: int = 3600
-    ):
-        # Try to get from cache
-        cached = await self.redis.get(key)
-        if cached:
-            return json.loads(cached)
-        
-        # Get fresh data
-        data = await getter()
-        
-        # Cache the result
-        await self.redis.setex(
-            key,
-            ttl,
-            json.dumps(data)
-        )
-        return data
-```
-
-### Background Tasks
-
-```python
-# Task Queue Implementation
-from celery import Celery
-
-celery = Celery('neighbour_approved')
-
-@celery.task
-def update_community_metrics(community_id: int):
-    """Update cached community metrics."""
-    # Implementation...
-
-@celery.task
-def send_endorsement_notification(
-    endorsement_id: int,
-    user_id: int
-):
-    """Send notification for new endorsement."""
-    # Implementation...
-```
-
-### Rate Limiting
-
-```python
-# Rate Limiting Implementation
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-class RateLimiter:
-    def __init__(self, redis: aioredis.Redis):
-        self.redis = redis
-    
-    async def check_rate_limit(
-        self,
-        key: str,
-        limit: int,
-        window: int
-    ) -> bool:
-        current = await self.redis.incr(key)
-        if current == 1:
-            await self.redis.expire(key, window)
-        return current <= limit
-
-# Middleware Implementation
-@app.middleware("http")
-async def rate_limit_middleware(
-    request: Request,
-    call_next: Callable
-):
-    limiter = request.app.state.limiter
-    key = f"rate_limit:{request.client.host}"
-    
-    if not await limiter.check_rate_limit(key, 100, 60):
-        return JSONResponse(
-            status_code=429,
-            content={"error": "Too many requests"}
-        )
-    
-    return await call_next(request)
-```
-
-### Circuit Breaker Pattern
-
-```python
-# Circuit Breaker Implementation
-from enum import Enum
-from datetime import datetime, timedelta
-
-class CircuitState(Enum):
-    CLOSED = "closed"
-    OPEN = "open"
-    HALF_OPEN = "half_open"
-
-class CircuitBreaker:
-    def __init__(
-        self,
-        failure_threshold: int = 5,
-        reset_timeout: int = 60
-    ):
-        self.state = CircuitState.CLOSED
-        self.failures = 0
-        self.failure_threshold = failure_threshold
-        self.reset_timeout = reset_timeout
-        self.last_failure_time = None
-    
-    async def call(
-        self,
-        func: Callable,
-        *args,
-        **kwargs
-    ):
-        if self.state == CircuitState.OPEN:
-            if self._should_attempt_reset():
-                self.state = CircuitState.HALF_OPEN
-            else:
-                raise Exception("Circuit breaker is open")
-        
-        try:
-            result = await func(*args, **kwargs)
-            if self.state == CircuitState.HALF_OPEN:
-                self.state = CircuitState.CLOSED
-                self.failures = 0
-            return result
-        except Exception as e:
-            self._handle_failure()
-            raise e
-    
-    def _handle_failure(self):
-        self.failures += 1
-        self.last_failure_time = datetime.now()
-        
-        if self.failures >= self.failure_threshold:
-            self.state = CircuitState.OPEN
-    
-    def _should_attempt_reset(self) -> bool:
-        if not self.last_failure_time:
-            return True
-        
-        reset_after = self.last_failure_time + \
-            timedelta(seconds=self.reset_timeout)
-        return datetime.now() >= reset_after
-```
-
-### Health Checks
-
-```python
-# Health Check Implementation
-from dataclasses import dataclass
-from enum import Enum
-
-class HealthStatus(str, Enum):
-    HEALTHY = "healthy"
-    UNHEALTHY = "unhealthy"
-    DEGRADED = "degraded"
-
-@dataclass
-class HealthCheck:
-    name: str
-    status: HealthStatus
-    details: dict
-
-class HealthService:
-    def __init__(self):
-        self.checks = []
-    
-    def add_check(self, check: Callable[[], HealthCheck]):
-        self.checks.append(check)
-    
-    async def run_checks(self) -> dict:
-        results = []
-        overall_status = HealthStatus.HEALTHY
-        
-        for check in self.checks:
-            try:
-                result = await check()
-                results.append(result)
-                if result.status == HealthStatus.UNHEALTHY:
-                    overall_status = HealthStatus.UNHEALTHY
-                elif result.status == HealthStatus.DEGRADED and \
-                     overall_status != HealthStatus.UNHEALTHY:
-                    overall_status = HealthStatus.DEGRADED
-            except Exception as e:
-                results.append(HealthCheck(
-                    name=check.__name__,
-                    status=HealthStatus.UNHEALTHY,
-                    details={"error": str(e)}
-                ))
-                overall_status = HealthStatus.UNHEALTHY
-        
-        return {
-            "status": overall_status,
-            "checks": results
-        }
-```
+- **Scaling to Microservices:** Potential to split out certain features (e.g., endorsements, sponsorships) into separate services.
+- **Event-Driven Architecture:** Use asynchronous workers (Celery or RQ) for background tasks (e.g., notifications).
+- **Integration with External APIs:** Future integration with WhatsApp API.
+- **Refining Status Fields:** Migrate status strings to Enums for stricter type safety.
