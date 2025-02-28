@@ -152,13 +152,13 @@ def get_settings() -> Settings:
     # Load environment variables from .env files
     _load_env_files()
 
+    # Check for empty secret key before attempting to create Settings
+    if os.getenv("SECRET_KEY") == "":
+        raise ValueError("SECRET_KEY environment variable cannot be empty")
+
     try:
         return Settings()
     except ValidationError as e:
-        # Check for empty secret key which is a special case
-        if os.getenv("SECRET_KEY") == "":
-            raise ValueError("SECRET_KEY environment variable cannot be empty") from e
-
         # Provide more helpful error message for validation errors
         missing_vars = _check_missing_environment_variables()
 
