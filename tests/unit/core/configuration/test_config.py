@@ -164,6 +164,7 @@ class TestConfigService:
         # Set all required variables
         required_fields = [
             "app_name",
+            "app_description",
             "version",
             "database_url",
             "api_base_url",
@@ -208,6 +209,7 @@ class TestConfigService:
         # Set all required variables
         required_fields = [
             "app_name",
+            "app_description",
             "version",
             "database_url",
             "api_base_url",
