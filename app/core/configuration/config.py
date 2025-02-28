@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     """
 
     app_name: str = Field(default="Neighbour Approved")
+    app_description: str = Field(default="API for Neighbour Approved platform")
     version: str = Field(default="0.1.0")
     database_url: str = Field(default="sqlite:///:memory:")
     api_base_url: str = Field(default="/api/v1")
@@ -116,6 +117,7 @@ def _check_missing_environment_variables() -> Dict[str, Any]:
     # Define the required fields to check
     required_fields = [
         "app_name",
+        "app_description",
         "version",
         "database_url",
         "api_base_url",
