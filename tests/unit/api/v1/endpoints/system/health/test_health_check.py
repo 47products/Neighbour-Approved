@@ -5,8 +5,10 @@ This module contains tests for the system health check endpoint
 to verify it returns the expected responses and status codes.
 """
 
+from tests.conftest import health_url, assert_successful_response
 
-def test_health_check(client, test_settings):
+
+def test_health_check(client, health_settings):
     """
     Test that the health check endpoint returns a 200 status code
     and the correct response data.
@@ -18,18 +20,18 @@ def test_health_check(client, test_settings):
         client: FastAPI test client fixture
         test_settings: Test configuration settings fixture
     """
-    # Construct the health check endpoint URL using the test settings
-    health_check_url = f"{test_settings['health_base_url']}/health_check"
+    # Construct the health check endpoint URL using the helper
+    url = health_url("/health_check", health_settings)
 
     # Make the request to the health check endpoint
-    response = client.get(health_check_url)
+    response = client.get(url)
 
     # Verify the response status code and content
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": test_settings["version"]}
+    assert_successful_response(response)
+    assert response.json() == {"status": "ok", "version": health_settings["version"]}
 
 
-def test_health_check_response_headers(client, test_settings):
+def test_health_check_response_headers(client, health_settings):
     """
     Test that the health check endpoint returns appropriate headers.
 
@@ -40,9 +42,8 @@ def test_health_check_response_headers(client, test_settings):
         client: FastAPI test client fixture
         test_settings: Test configuration settings fixture
     """
-    health_check_url = f"{test_settings['health_base_url']}/health_check"
-    response = client.get(health_check_url)
+    url = health_url("/health_check", health_settings)
+    response = client.get(url)
 
-    # Verify response headers
-    assert response.headers["content-type"] == "application/json"
-    assert "content-length" in response.headers
+    # Verify response headers using the helper function
+    assert_successful_response(response)
