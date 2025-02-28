@@ -1,4 +1,4 @@
-# pylint: disable=unused-argument, duplicate-code
+# pylint: disable=unused-argument, duplicate-code, function-redefined
 """
 Unit tests for the core configuration service.
 
@@ -159,7 +159,7 @@ class TestConfigService:
             # Should only load the default .env file, not the missing environment-specific one
             assert mock_load_dotenv.call_count == 1
 
-    def test_check_missing_environment_variables_none_missing(self, monkeypatch):
+    def test_check_missing_environment_variables_none_missing_direct(self, monkeypatch):
         """Test checking for missing environment variables when none are missing."""
         # Set all required variables
         required_fields = [
@@ -181,7 +181,9 @@ class TestConfigService:
         missing_vars = _check_missing_environment_variables()
         assert not missing_vars
 
-    def test_check_missing_environment_variables_some_missing(self, monkeypatch):
+    def test_check_missing_environment_variables_with_patched_environ(
+        self, monkeypatch
+    ):
         """Test checking for missing environment variables when some are missing."""
         # Clear all environment variables first
         for var in os.environ:
