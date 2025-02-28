@@ -37,7 +37,7 @@ class Settings(BaseSettings):
         debug: Whether debug mode is enabled
     """
 
-    app_name: str = Field(default="Neighbour Approved")
+    app_name: str = Field(default="Neighbour Approved API")
     app_description: str = Field(default="API for Neighbour Approved platform")
     version: str = Field(default="0.1.0")
     database_url: str = Field(default="sqlite:///:memory:")
