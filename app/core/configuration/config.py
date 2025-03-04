@@ -225,7 +225,7 @@ def get_settings() -> Settings:
 # Create a global instance for easy import
 try:
     settings = get_settings()
-except (ValueError, ValidationError) as e:
+except ValueError as e:
     import sys
 
     print(f"ERROR: Failed to load configuration: {str(e)}", file=sys.stderr)
