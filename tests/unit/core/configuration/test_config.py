@@ -7,7 +7,6 @@ verifying that it correctly loads and provides access to core application
 settings from environment variables and .env files.
 """
 
-import os
 from unittest.mock import patch
 import pytest
 
@@ -158,51 +157,6 @@ class TestConfigService:
 
             # Should only load the default .env file, not the missing environment-specific one
             assert mock_load_dotenv.call_count == 1
-
-    def test_check_missing_environment_variables_none_missing_direct(self, monkeypatch):
-        """Test checking for missing environment variables when none are missing."""
-        # Set all required variables
-        required_fields = [
-            "app_name",
-            "app_description",
-            "version",
-            "database_url",
-            "api_base_url",
-            "secret_key",
-            "log_level",
-            "log_format",
-            "environment",
-            "debug",
-        ]
-
-        for field in required_fields:
-            monkeypatch.setenv(field, "test_value")
-
-        # Call the function and verify results
-        missing_vars = _check_missing_environment_variables()
-        assert not missing_vars
-
-    def test_check_missing_environment_variables_with_patched_environ(
-        self, monkeypatch
-    ):
-        """Test checking for missing environment variables when some are missing."""
-        # Clear all environment variables first
-        for var in os.environ:
-            monkeypatch.delenv(var, raising=False)
-
-        # Set only some of the required variables
-        monkeypatch.setenv("APP_NAME", "test_app")
-        monkeypatch.setenv("VERSION", "0.1.0")
-
-        # Call the function
-        missing_vars = _check_missing_environment_variables()
-
-        # Verify that missing variables are correctly identified
-        assert "database_url" in missing_vars
-        assert "api_base_url" in missing_vars
-        assert "secret_key" in missing_vars
-        assert "app_name" not in missing_vars
-        assert "version" not in missing_vars
 
     def test_check_missing_environment_variables_none_missing_direct(self, monkeypatch):
         """Test checking for missing environment variables when none are missing."""
