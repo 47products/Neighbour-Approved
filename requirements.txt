@@ -1,6 +1,7 @@
 # Core dependencies
 alembic==1.14.0
-fastapi==0.115.6
+fastapi==0.115.11
+starlette==0.46.0
 pydantic==2.10.3
 pydantic-settings==2.6.1
 SQLAlchemy==2.0.36

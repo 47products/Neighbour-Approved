@@ -114,7 +114,7 @@ class TestRequestLoggingMiddleware:
             "logger": mock_logger,
         }
 
-    @pytest.mark.asyncio(scope="session")
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_dispatch_successful_request(self, middleware, test_setup):
         """
         Test that the middleware correctly logs successful requests.
