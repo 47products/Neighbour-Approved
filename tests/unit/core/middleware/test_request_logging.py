@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument, too-many-arguments, too-many-positional-arguments
 """
 Unit tests for the request logging middleware.
 
@@ -98,7 +99,9 @@ class TestRequestLoggingMiddleware:
         return mock_response
 
     @pytest.fixture
-    def test_setup(self, mock_request, mock_response, mock_logger, _, __):
+    def test_setup(
+        self, mock_request, mock_response, mock_logger, mock_uuid, mock_time
+    ):
         """
         Combine multiple fixtures to reduce argument count in test methods.
 
@@ -111,7 +114,7 @@ class TestRequestLoggingMiddleware:
             "logger": mock_logger,
         }
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(scope="session")
     async def test_dispatch_successful_request(self, middleware, test_setup):
         """
         Test that the middleware correctly logs successful requests.

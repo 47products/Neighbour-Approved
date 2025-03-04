@@ -7,7 +7,6 @@ It centralises common test components to improve maintainability and
 consistency across the test suite.
 """
 
-import asyncio
 from typing import Generator, Dict, Any
 from unittest.mock import MagicMock
 
@@ -86,22 +85,6 @@ def mock_env_vars(monkeypatch):
     # Clear cache again after tests
     if hasattr(get_settings, "cache_clear"):
         get_settings.cache_clear()
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """
-    Create an event loop for tests.
-
-    This fixture provides a consistent event loop for async tests,
-    ensuring proper cleanup after test execution.
-
-    Yields:
-        asyncio.AbstractEventLoop: The event loop for async tests
-    """
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest.fixture
