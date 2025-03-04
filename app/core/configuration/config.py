@@ -9,11 +9,55 @@ application settings without any business logic or domain-specific configuration
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Any
+from typing import List
 
 from pydantic import Field, field_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+
+
+class LoggingSettings(BaseSettings):
+    """
+    Logging-specific configuration settings.
+
+    Attributes:
+        level: The logging level to use
+        format: The format for log messages
+        log_to_file: Whether to log to files
+        log_to_console: Whether to log to the console
+        log_dir: Directory to store log files
+        app_log_filename: Filename for the application log
+        error_log_filename: Filename for the error log
+        max_log_file_size: Maximum size of log files before rotation
+        backup_count: Number of backup log files to keep
+    """
+
+    level: str = Field(default="INFO")
+    format: str = Field(default="standard")
+    log_to_file: bool = Field(default=True)
+    log_to_console: bool = Field(default=True)
+    log_dir: str = Field(default="logs")
+    app_log_filename: str = Field(default="app.log")
+    error_log_filename: str = Field(default="error.log")
+    backup_count: int = Field(default=30)
+
+    @field_validator("level")
+    @classmethod
+    def validate_level(cls, v: str) -> str:
+        """Validate the log level."""
+        allowed_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if v.upper() not in allowed_levels:
+            raise ValueError(f"Log level must be one of {allowed_levels}")
+        return v.upper()
+
+    @field_validator("format")
+    @classmethod
+    def validate_format(cls, v: str) -> str:
+        """Validate the log format."""
+        allowed_formats = ["standard", "json"]
+        if v.lower() not in allowed_formats:
+            raise ValueError(f"Log format must be one of {allowed_formats}")
+        return v.lower()
 
 
 class Settings(BaseSettings):
@@ -47,6 +91,9 @@ class Settings(BaseSettings):
     log_format: str = Field(default="standard")
     environment: str = Field(default="development")
     debug: bool = Field(default=False)
+
+    # Add logging settings
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     @field_validator("log_level")
     @classmethod
@@ -104,12 +151,12 @@ def _load_env_files() -> None:
         load_dotenv(str(default_env_file))
 
 
-def _check_missing_environment_variables() -> Dict[str, Any]:
+def _check_missing_environment_variables() -> List[str]:
     """
     Check for missing required environment variables.
 
     Returns:
-        Dict[str, Any]: Dictionary of missing variables
+        List[str]: List of missing variable names
 
     Note:
         This is a helper function for get_settings()
