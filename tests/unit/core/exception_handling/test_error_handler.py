@@ -35,6 +35,7 @@ from app.core.exception_handling.error_handler import (
     unhandled_exception_handler,
     http_exception_handler,
     register_exception_handlers,
+    validation_exception_handler,
 )
 
 
@@ -800,3 +801,45 @@ def test_authorization_error_without_permission():
     assert error.error_code == "AUTHORIZATION_ERROR"
     assert error.message == "Authorization error without permission requirement"
     assert error.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_validation_exception_handler_with_short_location():
+    """
+    Test validation_exception_handler with errors that have location arrays shorter than 2 elements.
+
+    This tests the negative condition in the 'if location and len(location) >= 2:' code path,
+    where location exists but doesn't have enough elements to extract a field name.
+    """
+    # Create a mock request
+    mock_request = MagicMock()
+
+    # Create a RequestValidationError with a location array that has only 1 element
+    validation_errors = [
+        {
+            "loc": ["body"],  # Only one element - too short to extract field name
+            "msg": "Invalid request body",
+            "type": "value_error",
+        }
+    ]
+    mock_exc = MagicMock(spec=RequestValidationError)
+    mock_exc.errors.return_value = validation_errors
+
+    # Call the handler directly with our mock exception
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+
+        response = asyncio.run(validation_exception_handler(mock_request, mock_exc))
+
+        # Verify the response status code
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+        # Verify the response content
+        response_body = json.loads(response.body)
+        assert response_body["error_code"] == "VALIDATION_ERROR"
+        assert "fields" in response_body["details"]
+
+        # The key point: verify that no fields were extracted
+        # from the short location array
+        assert len(response_body["details"]["fields"]) == 0
+
+        # Verify logging happened
+        mock_logger.warning.assert_called_once()
