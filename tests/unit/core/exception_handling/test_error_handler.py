@@ -776,3 +776,27 @@ def test_external_service_error_without_service():
     assert error.error_code == "EXTERNAL_SERVICE_ERROR"
     assert error.message == "External service error without service name"
     assert error.status_code == status.HTTP_502_BAD_GATEWAY
+
+
+def test_authorization_error_without_permission():
+    """
+    Test that AuthorizationError works correctly when no required_permission is specified.
+
+    This test verifies that when no required_permission is provided, the details dictionary
+    doesn't contain a required_permission entry, covering the negative condition of the
+    'if required_permission:' code path.
+    """
+    # Create an AuthorizationError without specifying a required_permission
+    error = AuthorizationError(
+        message="Authorization error without permission requirement"
+    )
+
+    # Verify that the details dictionary exists but doesn't contain required_permission
+    assert hasattr(error, "details")
+    assert isinstance(error.details, dict)
+    assert "required_permission" not in error.details
+
+    # Also verify other attributes are set correctly
+    assert error.error_code == "AUTHORIZATION_ERROR"
+    assert error.message == "Authorization error without permission requirement"
+    assert error.status_code == status.HTTP_403_FORBIDDEN
