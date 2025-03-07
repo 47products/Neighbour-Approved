@@ -15,6 +15,7 @@ Dependencies:
     - FastAPI TestClient (provided via conftest.py)
 """
 
+from unittest.mock import patch
 from fastapi import APIRouter, HTTPException, status
 from fastapi import Query
 import pytest
@@ -420,3 +421,35 @@ def test_resource_not_found_with_no_details(error_test_client):
     assert data["error_code"] == "RESOURCE_NOT_FOUND"
     assert "details" in data
     assert data["details"] == {}
+
+
+def test_app_exception_handler_for_500_errors(error_test_client):
+    """
+    Test that the app_exception_handler logs 500-level errors at error level.
+
+    This test verifies that exceptions with status codes >= 500 are logged
+    at the error level with exc_info=True.
+    """
+
+    # Create a route that raises a DatabaseError (500-level error)
+    @router.get("/database-error-logged", include_in_schema=False)
+    def raise_database_error_for_logging():
+        raise DatabaseError(message="Database error for logging test")
+
+    # Register the new route
+    error_test_client.app.include_router(router, prefix="/test-errors-log")
+
+    # Patch the logger to verify it's called with the right level
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        # Call the endpoint to trigger the exception
+        response = error_test_client.get("/test-errors-log/database-error-logged")
+
+        # Verify the response
+        assert response.status_code == 500
+
+        # Verify the logger was called with error level and exc_info=True
+        mock_logger.error.assert_called_once()
+        args, kwargs = mock_logger.error.call_args
+        assert "Application exception" in args[0]
+        assert "DATABASE_ERROR" in args[1]
+        assert kwargs.get("exc_info") is True
