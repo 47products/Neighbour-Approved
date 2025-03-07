@@ -15,7 +15,9 @@ Dependencies:
     - FastAPI TestClient (provided via conftest.py)
 """
 
+import json
 from unittest.mock import MagicMock, patch
+import asyncio
 import pytest
 from fastapi import APIRouter, HTTPException, status
 from fastapi import Query, FastAPI
@@ -28,6 +30,8 @@ from app.core.exception_handling.error_handler import (
     AuthorizationError,
     DatabaseError,
     ExternalServiceError,
+    unhandled_exception_handler,
+    http_exception_handler,
 )
 
 
@@ -489,3 +493,64 @@ def test_custom_exception_handlers_registration():
         mock_app.add_exception_handler.assert_any_call(
             CustomTestException, custom_handler
         )
+
+
+def test_unhandled_exception_handler_directly():
+    """
+    Test unhandled_exception_handler function directly.
+
+    This test verifies that the unhandled_exception_handler correctly logs
+    exceptions and returns the appropriate JSON response.
+    """
+
+    # Create mock request and exception
+    mock_request = MagicMock()
+    test_exception = ValueError("Test unhandled exception")
+
+    # Patch the logger
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+
+        response = asyncio.run(
+            unhandled_exception_handler(mock_request, test_exception)
+        )
+
+        # Verify the logger was called
+        mock_logger.error.assert_called_once_with(
+            "Unhandled exception: %s", "Test unhandled exception", exc_info=True
+        )
+
+        # Verify the response
+        assert response.status_code == 500
+        response_body = json.loads(response.body)
+        assert response_body["error_code"] == "INTERNAL_SERVER_ERROR"
+        assert response_body["message"] == "An unexpected error occurred"
+        assert response_body["details"]["error"] == "Test unhandled exception"
+
+
+def test_http_exception_handler_directly():
+    """
+    Test http_exception_handler function directly.
+
+    This test verifies that the http_exception_handler correctly logs
+    HTTP exceptions and returns the appropriate JSON response.
+    """
+    # Create mock request and exception
+    mock_request = MagicMock()
+    test_exception = HTTPException(status_code=404, detail="Custom HTTP exception")
+
+    # Patch the logger
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        # Call the handler function directly
+        response = asyncio.run(http_exception_handler(mock_request, test_exception))
+
+        # Verify the logger was called
+        mock_logger.warning.assert_called_once_with(
+            "HTTP exception: %s - %s", 404, "Custom HTTP exception"
+        )
+
+        # Verify the response
+        assert response.status_code == 404
+        response_body = json.loads(response.body)
+        assert response_body["error_code"] == "HTTP_404"
+        assert response_body["message"] == "Custom HTTP exception"
+        assert response_body["details"] == {}
