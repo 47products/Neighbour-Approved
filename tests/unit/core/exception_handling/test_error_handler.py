@@ -15,11 +15,11 @@ Dependencies:
     - FastAPI TestClient (provided via conftest.py)
 """
 
-from unittest.mock import patch
-from fastapi import APIRouter, HTTPException, status
-from fastapi import Query
+from unittest.mock import MagicMock, patch
 import pytest
-
+from fastapi import APIRouter, HTTPException, status
+from fastapi import Query, FastAPI
+from app.core.exception_handling import error_handler
 from app.core.exception_handling.error_handler import (
     BaseAppException,
     ResourceNotFoundError,
@@ -453,3 +453,39 @@ def test_app_exception_handler_for_500_errors(error_test_client):
         assert "Application exception" in args[0]
         assert "DATABASE_ERROR" in args[1]
         assert kwargs.get("exc_info") is True
+
+
+def test_custom_exception_handlers_registration():
+    """
+    Test registering custom exception handlers from EXCEPTION_HANDLERS dict.
+
+    This test verifies that custom exception handlers in the EXCEPTION_HANDLERS
+    dictionary are properly registered with the FastAPI application.
+    """
+
+    # Create a mock exception class and handler
+    class CustomTestException(Exception):
+        """Custom test exception for handler registration"""
+
+    async def custom_handler():
+        return {"handled": "custom"}
+
+    # Set up the test
+    with patch.dict(
+        error_handler.EXCEPTION_HANDLERS, {CustomTestException: custom_handler}
+    ):
+        # Create a mock FastAPI app
+        mock_app = MagicMock(spec=FastAPI)
+
+        # Call the register function
+        error_handler.register_exception_handlers(mock_app)
+
+        # Verify all expected handlers were registered
+        assert (
+            mock_app.add_exception_handler.call_count >= 4
+        )  # At least the main handlers
+
+        # Check that our custom handler was registered
+        mock_app.add_exception_handler.assert_any_call(
+            CustomTestException, custom_handler
+        )
