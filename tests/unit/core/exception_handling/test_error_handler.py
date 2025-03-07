@@ -16,11 +16,13 @@ Dependencies:
 """
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 import asyncio
 import pytest
-from fastapi import APIRouter, HTTPException, status
-from fastapi import Query, FastAPI
+from fastapi import APIRouter, HTTPException, status, Query, FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core.exception_handling import error_handler
 from app.core.exception_handling.error_handler import (
     BaseAppException,
@@ -32,6 +34,7 @@ from app.core.exception_handling.error_handler import (
     ExternalServiceError,
     unhandled_exception_handler,
     http_exception_handler,
+    register_exception_handlers,
 )
 
 
@@ -554,3 +557,200 @@ def test_http_exception_handler_directly():
         assert response_body["error_code"] == "HTTP_404"
         assert response_body["message"] == "Custom HTTP exception"
         assert response_body["details"] == {}
+
+
+async def test_http_exception_handler_logging():
+    """
+    Test the logging aspect of the http_exception_handler function.
+
+    This test directly calls the handler function to verify it properly
+    logs HTTP exceptions with the correct level and details.
+    """
+    # Create mock request and exception
+    mock_request = MagicMock()
+    test_exception = StarletteHTTPException(
+        status_code=429, detail="Rate limit exceeded"
+    )
+
+    # Mock the logger to capture and verify the logging
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        # Call the handler function directly
+        response = await http_exception_handler(mock_request, test_exception)
+
+        # Verify the logger was called with warning level and correct parameters
+        mock_logger.warning.assert_called_once_with(
+            "HTTP exception: %s - %s", 429, "Rate limit exceeded"
+        )
+
+        # Verify the response structure
+        assert response.status_code == 429
+        response_body = json.loads(response.body)
+        assert response_body["error_code"] == "HTTP_429"
+        assert response_body["message"] == "Rate limit exceeded"
+
+
+async def test_unhandled_exception_handler_logging():
+    """
+    Test the logging aspect of the unhandled_exception_handler function.
+
+    This test directly calls the handler function to verify it properly
+    logs unhandled exceptions with the correct level and includes stack traces.
+    """
+    # Create mock request and a complex exception
+    mock_request = MagicMock()
+    test_exception = (
+        None  # Initialize before try/except to avoid used-before-assignment
+    )
+
+    try:
+        # Create a more complex exception with a traceback
+        1 / 0
+    except (
+        ZeroDivisionError
+    ) as exc:  # Catch specific exception instead of broad Exception
+        test_exception = exc
+
+    # Mock the logger to capture and verify the logging
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        # Call the handler function directly
+        response = await unhandled_exception_handler(mock_request, test_exception)
+
+        # Verify the logger was called with error level and exc_info=True
+        mock_logger.error.assert_called_once_with(
+            "Unhandled exception: %s", "division by zero", exc_info=True
+        )
+
+        # Verify the response
+        assert response.status_code == 500
+        response_body = json.loads(response.body)
+        assert response_body["error_code"] == "INTERNAL_SERVER_ERROR"
+        assert "division by zero" in response_body["details"]["error"]
+
+
+def test_register_exception_handlers_with_custom_handlers():
+    """
+    Test registering custom exception handlers from EXCEPTION_HANDLERS.
+
+    This test focuses specifically on the code that registers handlers from
+    the EXCEPTION_HANDLERS dictionary, ensuring it correctly adds all handlers.
+    """
+
+    # Create mock exception classes and handlers
+    class CustomError1(Exception):
+        """First custom test exception"""
+
+    class CustomError2(Exception):
+        """Second custom test exception"""
+
+    async def handler1():
+        """First custom handler"""
+        return JSONResponse(content={"custom": "handler1"})
+
+    async def handler2():
+        """Second custom handler"""
+        return JSONResponse(content={"custom": "handler2"})
+
+    # Create a mock app
+    mock_app = MagicMock(spec=FastAPI)
+
+    # Patch the EXCEPTION_HANDLERS dictionary with our custom handlers
+    custom_handlers = {CustomError1: handler1, CustomError2: handler2}
+
+    with patch.dict(
+        "app.core.exception_handling.error_handler.EXCEPTION_HANDLERS",
+        custom_handlers,
+        clear=True,
+    ):
+        # Call register_exception_handlers
+        register_exception_handlers(mock_app)
+
+        # Verify that add_exception_handler was called for standard handlers
+        assert mock_app.add_exception_handler.call_count >= 5  # 3 standard + 2 custom
+
+        # Verify our custom handlers were registered
+        mock_app.add_exception_handler.assert_any_call(CustomError1, handler1)
+        mock_app.add_exception_handler.assert_any_call(CustomError2, handler2)
+
+
+async def test_http_exception_handler_different_status():
+    """
+    Test the http_exception_handler with a different status code.
+
+    This test directly calls the handler with a non-standard HTTP status code
+    to ensure different code paths in the handler are covered.
+    """
+    mock_request = MagicMock()
+    test_exception = StarletteHTTPException(status_code=451, detail="Legal takedown")
+
+    # Check how the handler processes this specific status code
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        response = await http_exception_handler(mock_request, test_exception)
+
+        # Verify the logger call with the exact parameters needed for line coverage
+        mock_logger.warning.assert_called_once_with(
+            "HTTP exception: %s - %s", 451, "Legal takedown"
+        )
+
+        # Verify the response contains the correct status and error code
+        assert response.status_code == 451
+        assert json.loads(response.body)["error_code"] == "HTTP_451"
+
+
+async def test_unhandled_exception_handler_with_custom_exception():
+    """
+    Test unhandled_exception_handler with a custom exception type.
+
+    This ensures the handler properly processes exceptions beyond the standard types.
+    """
+
+    class CustomTestError(ValueError):
+        """Custom test error for unhandled exception handling"""
+
+    mock_request = MagicMock()
+    test_exception = CustomTestError("Custom unhandled test error")
+
+    with patch("app.core.exception_handling.error_handler.logger") as mock_logger:
+        response = await unhandled_exception_handler(mock_request, test_exception)
+
+        # Verify the exact logger call for line coverage
+        mock_logger.error.assert_called_once_with(
+            "Unhandled exception: %s", "Custom unhandled test error", exc_info=True
+        )
+
+        # Verify response details
+        assert response.status_code == 500
+        response_body = json.loads(response.body)
+        assert response_body["details"]["error"] == "Custom unhandled test error"
+
+
+def test_register_exception_handlers_empty_dict():
+    """
+    Test register_exception_handlers with an empty handlers dictionary.
+
+    This tests the code path where there are no custom handlers to register.
+    """
+    mock_app = MagicMock(spec=FastAPI)
+
+    # Test with empty EXCEPTION_HANDLERS dictionary
+    with patch.dict(
+        "app.core.exception_handling.error_handler.EXCEPTION_HANDLERS", {}, clear=True
+    ):
+        register_exception_handlers(mock_app)
+
+        # Verify the standard handlers were registered
+        assert (
+            mock_app.add_exception_handler.call_count == 4
+        )  # Only the standard handlers
+
+        # Check each standard handler was registered exactly once
+        handlers_to_check = [
+            RequestValidationError,
+            StarletteHTTPException,
+            BaseAppException,
+            Exception,
+        ]
+
+        for handler_type in handlers_to_check:
+            mock_app.add_exception_handler.assert_any_call(
+                handler_type, ANY
+            )  # Use ANY to match any handler function
