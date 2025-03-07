@@ -2,19 +2,23 @@
 Core configuration service for the Neighbour Approved application.
 
 This module provides a centralised way to access application configuration
-from environment variables and .env files. It focuses solely on core
-application settings without any business logic or domain-specific configuration.
+from environment variables and .env files.
 """
 
 import os
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import List, Callable, Optional
+from typing import List, Optional, Callable
 
 from pydantic import Field, field_validator, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+
+# Constants for validation
+LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LOG_FORMATS = ["standard", "json"]
+ENVIRONMENTS = ["development", "testing", "staging", "production"]
 
 
 def _validate_field_value(
@@ -45,19 +49,7 @@ def _validate_field_value(
 
 
 class LoggingSettings(BaseSettings):
-    """
-    Logging-specific configuration settings.
-
-    Attributes:
-        level: The logging level to use
-        format: The format for log messages
-        log_to_file: Whether to log to files
-        log_to_console: Whether to log to the console
-        log_dir: Directory to store log files
-        app_log_filename: Filename for the application log
-        error_log_filename: Filename for the error log
-        backup_count: Number of backup log files to keep
-    """
+    """Logging-specific configuration settings."""
 
     level: str = Field(default="INFO")
     format: str = Field(default="standard")
@@ -72,38 +64,17 @@ class LoggingSettings(BaseSettings):
     @classmethod
     def validate_level(cls, v: str) -> str:
         """Validate the log level."""
-        allowed_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        return _validate_field_value(v, allowed_levels, "Log level", str.upper)
+        return _validate_field_value(v, LOG_LEVELS, "Log level", str.upper)
 
     @field_validator("format")
     @classmethod
     def validate_format(cls, v: str) -> str:
         """Validate the log format."""
-        allowed_formats = ["standard", "json"]
-        return _validate_field_value(v, allowed_formats, "Log format", str.lower)
+        return _validate_field_value(v, LOG_FORMATS, "Log format", str.lower)
 
 
 class Settings(BaseSettings):
-    """
-    Core application settings loaded from environment variables.
-
-    This class contains only the essential configuration needed for the
-    application framework to function, without any business logic or
-    domain-specific settings.
-
-    Attributes:
-        app_name: Name of the application
-        app_description: Description of the application
-        version: Application version string
-        database_url: Database connection URL
-        api_base_url: Base URL for the API
-        secret_key: Secret key for security features
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_format: Format for log messages (standard, json)
-        environment: Deployment environment (development, testing, production)
-        debug: Whether debug mode is enabled
-        logging: Logging-specific settings
-    """
+    """Core application settings loaded from environment variables."""
 
     app_name: str = Field(default="Neighbour Approved API")
     app_description: str = Field(default="API for Neighbour Approved platform")
@@ -123,22 +94,19 @@ class Settings(BaseSettings):
     @classmethod
     def validate_log_level(cls, v: str) -> str:
         """Validate the log level."""
-        allowed_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        return _validate_field_value(v, allowed_levels, "Log level", str.upper)
+        return _validate_field_value(v, LOG_LEVELS, "Log level", str.upper)
 
     @field_validator("log_format")
     @classmethod
     def validate_log_format(cls, v: str) -> str:
         """Validate the log format."""
-        allowed_formats = ["standard", "json"]
-        return _validate_field_value(v, allowed_formats, "Log format", str.lower)
+        return _validate_field_value(v, LOG_FORMATS, "Log format", str.lower)
 
     @field_validator("environment")
     @classmethod
     def validate_environment(cls, v: str) -> str:
         """Validate the environment."""
-        allowed_environments = ["development", "testing", "staging", "production"]
-        return _validate_field_value(v, allowed_environments, "Environment", str.lower)
+        return _validate_field_value(v, ENVIRONMENTS, "Environment", str.lower)
 
     model_config = SettingsConfigDict(
         env_file=".env", case_sensitive=False, extra="ignore"
@@ -152,29 +120,25 @@ def _load_env_files() -> None:
     Loads from environment-specific .env file first, then from the default .env file.
     Environment-specific files take precedence over the default file.
     """
-    # Determine the base directory (project root)
+    # Get base directory (project root)
     base_dir = Path(__file__).parents[3]
 
-    # Load environment-specific .env file if it exists
+    # Get environment
     env = os.getenv("ENVIRONMENT", "development")
     env_specific_file = base_dir / f".env.{env}"
+    default_env_file = base_dir / ".env"
 
+    # Load environment-specific file first (if exists)
     if env_specific_file.exists():
         load_dotenv(str(env_specific_file), override=True)
 
-    # Load default .env file
-    default_env_file = base_dir / ".env"
+    # Then load default file (if exists)
     if default_env_file.exists():
         load_dotenv(str(default_env_file))
 
 
 def _get_required_env_vars() -> List[str]:
-    """
-    Get list of required environment variables.
-
-    Returns:
-        List[str]: List of required environment variable names
-    """
+    """Get list of required environment variables."""
     return [
         "app_name",
         "app_description",
@@ -190,31 +154,49 @@ def _get_required_env_vars() -> List[str]:
 
 
 def _check_missing_environment_variables() -> List[str]:
-    """
-    Check for missing required environment variables.
-
-    Returns:
-        List[str]: List of missing variable names
-    """
-    missing_vars = []
+    """Check for missing required environment variables."""
+    missing = []
 
     for field_name in _get_required_env_vars():
         # Check both uppercase and lowercase versions
         if (field_name not in os.environ) and (field_name.upper() not in os.environ):
-            missing_vars.append(field_name)
+            missing.append(field_name)
 
-    return missing_vars
+    return missing
 
 
 def _validate_secret_key() -> None:
     """
-    Validate that the SECRET_KEY environment variable is not empty.
+    Validate that SECRET_KEY environment variable is not empty.
 
     Raises:
         ValueError: If SECRET_KEY is empty
     """
     if os.getenv("SECRET_KEY") == "":
         raise ValueError("SECRET_KEY environment variable cannot be empty")
+
+
+def _handle_validation_error(error: ValidationError) -> ValueError:
+    """Handle validation errors with improved error messages."""
+    missing_vars = _check_missing_environment_variables()
+
+    if missing_vars:
+        return ValueError(
+            f"Missing required environment variables: {', '.join(missing_vars)}. "
+            f"Original error: {str(error)}"
+        )
+
+    return ValueError(str(error))
+
+
+def _create_settings() -> Settings:
+    """Create and validate settings object with simplified error handling."""
+    try:
+        return Settings()
+    except ValidationError as e:
+        raise _handle_validation_error(e) from e
+    except Exception as e:
+        raise ValueError(f"Configuration error: {str(e)}") from e
 
 
 @lru_cache()
@@ -234,22 +216,8 @@ def get_settings() -> Settings:
     # Step 2: Validate secret key
     _validate_secret_key()
 
-    # Step 3: Create and validate settings
-    try:
-        return Settings()
-    except ValidationError as e:
-        # Check for missing environment variables for better error messages
-        missing_vars = _check_missing_environment_variables()
-        if missing_vars:
-            raise ValueError(
-                f"Missing required environment variables: {', '.join(missing_vars)}. "
-                f"Original error: {str(e)}"
-            ) from e
-        # Re-raise the original ValidationError
-        raise
-    except Exception as e:
-        # Handle other potential errors
-        raise ValueError(f"Configuration error: {str(e)}") from e
+    # Step 3: Create settings
+    return _create_settings()
 
 
 def _create_global_settings() -> Optional[Settings]:
