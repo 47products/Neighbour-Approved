@@ -843,3 +843,37 @@ def test_validation_exception_handler_with_short_location():
 
         # Verify logging happened
         mock_logger.warning.assert_called_once()
+
+
+def test_authorization_error_permission_handling():
+    """
+    Test both conditions of the required_permission handling in AuthorizationError.
+
+    This test verifies:
+    1. When required_permission is provided, it's correctly added to the details dictionary
+    2. When required_permission is not provided, the details dictionary remains empty
+    """
+    # Test with required_permission provided (positive condition)
+    permission_name = "test:permission"
+    error_with_permission = AuthorizationError(
+        message="Authorization error with permission",
+        required_permission=permission_name,
+    )
+
+    # Verify details contains the permission
+    assert "required_permission" in error_with_permission.details
+    assert error_with_permission.details["required_permission"] == permission_name
+    assert error_with_permission.status_code == status.HTTP_403_FORBIDDEN
+    assert error_with_permission.error_code == "AUTHORIZATION_ERROR"
+
+    # Test without required_permission (negative condition)
+    error_without_permission = AuthorizationError(
+        message="Authorization error without permission"
+    )
+
+    # Verify details is empty
+    assert isinstance(error_without_permission.details, dict)
+    assert "required_permission" not in error_without_permission.details
+    assert error_without_permission.details == {}
+    assert error_without_permission.status_code == status.HTTP_403_FORBIDDEN
+    assert error_without_permission.error_code == "AUTHORIZATION_ERROR"
