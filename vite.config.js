@@ -3,7 +3,8 @@ import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
 export default defineConfig({
-  root: __dirname,  // Explicitly set the root directory
+  root: __dirname,  // Set root to current directory
+  publicDir: 'public',  // Specify public directory
   plugins: [vue()],
   resolve: {
     alias: {
