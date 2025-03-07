@@ -30,7 +30,7 @@ def _validate_field_value(
         value: The value to validate
         allowed_values: List of allowed values
         field_name: Name of the field for error messages
-        transform: Function to transform the value before checking (e.g., upper, lower)
+        transform: Function to transform the value before checking
 
     Returns:
         The transformed value if valid
@@ -89,8 +89,7 @@ class Settings(BaseSettings):
 
     This class contains only the essential configuration needed for the
     application framework to function, without any business logic or
-    domain-specific settings. All values are loaded from environment
-    variables or .env files with no defaults hardcoded in the application.
+    domain-specific settings.
 
     Attributes:
         app_name: Name of the application
@@ -103,6 +102,7 @@ class Settings(BaseSettings):
         log_format: Format for log messages (standard, json)
         environment: Deployment environment (development, testing, production)
         debug: Whether debug mode is enabled
+        logging: Logging-specific settings
     """
 
     app_name: str = Field(default="Neighbour Approved API")
@@ -149,9 +149,8 @@ def _load_env_files() -> None:
     """
     Load environment variables from .env files.
 
-    This function loads variables from environment-specific .env files
-    first, then from the default .env file. Environment-specific files
-    take precedence over the default file.
+    Loads from environment-specific .env file first, then from the default .env file.
+    Environment-specific files take precedence over the default file.
     """
     # Determine the base directory (project root)
     base_dir = Path(__file__).parents[3]
@@ -197,10 +196,8 @@ def _check_missing_environment_variables() -> List[str]:
     Returns:
         List[str]: List of missing variable names
     """
-    # Start with the list of required fields
     missing_vars = []
 
-    # Check each required field
     for field_name in _get_required_env_vars():
         # Check both uppercase and lowercase versions
         if (field_name not in os.environ) and (field_name.upper() not in os.environ):
@@ -225,21 +222,19 @@ def get_settings() -> Settings:
     """
     Load and return core application settings with caching.
 
-    This function loads environment variables from .env files and returns
-    a validated Settings object. Results are cached to avoid repeated loading.
-
     Returns:
         Settings: Core application configuration settings
 
     Raises:
         ValueError: If required environment variables are missing or invalid
     """
-    # Load environment variables from .env files
+    # Step 1: Load environment variables
     _load_env_files()
 
-    # Check for empty secret key before attempting to create Settings
+    # Step 2: Validate secret key
     _validate_secret_key()
 
+    # Step 3: Create and validate settings
     try:
         return Settings()
     except ValidationError as e:
@@ -260,9 +255,6 @@ def get_settings() -> Settings:
 def _create_global_settings() -> Optional[Settings]:
     """
     Create and return the global settings instance.
-
-    This function handles the creation of the global settings instance,
-    including error handling.
 
     Returns:
         Settings: The global settings instance, or None if an error occurs
