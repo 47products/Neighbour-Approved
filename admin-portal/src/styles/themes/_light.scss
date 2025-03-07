@@ -1,0 +1,16 @@
+/* Light theme specific styles */
+
+[data-theme="light"] {
+    // Light theme variables are the default in :root
+    
+    // Any additional light theme specific styles that can't be handled with CSS variables
+    
+    // Custom scrollbar for light theme
+    ::-webkit-scrollbar-thumb {
+      background-color: rgba(0, 0, 0, 0.2);
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: rgba(0, 0, 0, 0.3);
+    }
+  }
