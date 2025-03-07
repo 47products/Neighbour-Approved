@@ -362,3 +362,61 @@ def test_invalid_data_structure_for_custom_validation(error_test_client):
     assert data["error_code"] == "VALIDATION_ERROR"
     assert "fields" in data["details"]
     assert "example_field" in data["details"]["fields"]
+
+
+def test_resource_not_found_with_only_type(error_test_client):
+    """
+    Test ResourceNotFoundError with only resource_type specified.
+
+    This tests the code path in ResourceNotFoundError where only resource_type
+    is provided but not resource_id.
+    """
+
+    # Add a route that raises ResourceNotFoundError with only type
+    @router.get("/resource-not-found-type-only", include_in_schema=False)
+    def raise_resource_not_found_type_only():
+        raise ResourceNotFoundError(
+            message="Resource not found during test",
+            resource_type="TypeOnlyResource",
+        )
+
+    # Register the new route
+    error_test_client.app.include_router(router, prefix="/test-errors-extra")
+
+    # Test the endpoint
+    response = error_test_client.get("/test-errors-extra/resource-not-found-type-only")
+    assert response.status_code == 404
+    data = response.json()
+    assert data["error_code"] == "RESOURCE_NOT_FOUND"
+    assert "details" in data
+    assert "resource_type" in data["details"]
+    assert "resource_id" not in data["details"]
+
+
+def test_resource_not_found_with_no_details(error_test_client):
+    """
+    Test ResourceNotFoundError with no additional details.
+
+    This tests the code path in ResourceNotFoundError where neither
+    resource_type nor resource_id is provided.
+    """
+
+    # Add a route that raises ResourceNotFoundError with no details
+    @router.get("/resource-not-found-no-details", include_in_schema=False)
+    def raise_resource_not_found_no_details():
+        raise ResourceNotFoundError(
+            message="Generic resource not found",
+        )
+
+    # Register the new route
+    error_test_client.app.include_router(router, prefix="/test-errors-extra2")
+
+    # Test the endpoint
+    response = error_test_client.get(
+        "/test-errors-extra2/resource-not-found-no-details"
+    )
+    assert response.status_code == 404
+    data = response.json()
+    assert data["error_code"] == "RESOURCE_NOT_FOUND"
+    assert "details" in data
+    assert data["details"] == {}
