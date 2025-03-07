@@ -754,3 +754,25 @@ def test_register_exception_handlers_empty_dict():
             mock_app.add_exception_handler.assert_any_call(
                 handler_type, ANY
             )  # Use ANY to match any handler function
+
+
+def test_external_service_error_without_service():
+    """
+    Test that ExternalServiceError works correctly when no service is specified.
+
+    This test verifies that when no service name is provided, the details dictionary
+    doesn't contain a service entry, covering the negative condition of the
+    'if service:' code path.
+    """
+    # Create an ExternalServiceError without specifying a service
+    error = ExternalServiceError(message="External service error without service name")
+
+    # Verify that the details dictionary exists but doesn't contain service
+    assert hasattr(error, "details")
+    assert isinstance(error.details, dict)
+    assert "service" not in error.details
+
+    # Also verify other attributes are set correctly
+    assert error.error_code == "EXTERNAL_SERVICE_ERROR"
+    assert error.message == "External service error without service name"
+    assert error.status_code == status.HTTP_502_BAD_GATEWAY
